@@ -1,0 +1,21 @@
+name: Idea
+description: すぐ実装しないアイデアの退避
+labels: ["type:idea", "status:parking"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: アイデア本文
+    validations:
+      required: true
+  - type: textarea
+    id: trigger
+    attributes:
+      label: Trigger
+      description: どんな状況で価値が出るか
+  - type: textarea
+    id: next
+    attributes:
+      label: Next Step
+      description: 最小の検証ステップ

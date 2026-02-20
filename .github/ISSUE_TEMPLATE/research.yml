@@ -1,0 +1,28 @@
+name: Research
+description: 技術調査や比較検討
+labels: ["type:research"]
+body:
+  - type: input
+    id: question
+    attributes:
+      label: Research Question
+      description: 何を明らかにしたいか
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Candidates
+      description: 比較対象
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected Output
+      description: 調査結果の提出形式
+    validations:
+      required: true
+  - type: input
+    id: deadline
+    attributes:
+      label: Deadline
+      description: YYYY-MM-DD

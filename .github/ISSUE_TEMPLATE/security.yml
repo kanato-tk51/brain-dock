@@ -1,0 +1,33 @@
+name: Security
+description: 機密・プライバシー・公開事故防止に関する課題
+labels: ["type:security", "risk:security"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: 問題の概要（秘密情報は書かない）
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: 想定影響
+    validations:
+      required: true
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Proposed Mitigation
+      description: 対策案
+    validations:
+      required: true
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: Urgency
+      options:
+        - urgent
+        - high
+        - normal

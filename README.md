@@ -34,6 +34,45 @@
 - `notes/`: 設計メモ、プロンプト保存
 - `exports/`: 監査用スナップショット（暗号化済みのみ）
 
+## ディレクトリ早見表
+```text
+brain-dock/
+├── README.md
+├── .github/                 # Issue/PRテンプレ、ラベル
+├── apps/                    # 実アプリ
+│   ├── cli/
+│   ├── api/
+│   ├── worker/
+│   └── web/
+├── packages/                # 共通ライブラリ
+├── schemas/                 # DB/JSONスキーマ
+│   ├── sql/
+│   └── json/
+├── scripts/                 # 運用スクリプト
+│   ├── migration/
+│   ├── scan/
+│   ├── backup/
+│   └── export/
+├── docs/                    # 仕様・設計・運用
+│   ├── roadmap/
+│   ├── architecture/
+│   ├── mvp/
+│   ├── operations/
+│   ├── plans/
+│   └── next-steps/
+├── design/                  # ADR・設計補助資料
+│   └── adr/
+├── notes/                   # 生メモ・プロンプト保存
+│   ├── inbox/
+│   ├── prompts/
+│   ├── weekly/
+│   └── research/
+├── exports/                 # 監査/移行用スナップショット
+│   ├── snapshots/
+│   └── audit/
+└── tests/
+```
+
 ## セキュリティ最低ルール
 - APIキー、住所、電話番号、契約原本、顧客生データ、健康の詳細は平文禁止
 - センシティブデータは `外部暗号化ストア + 要約メタデータ` を採用

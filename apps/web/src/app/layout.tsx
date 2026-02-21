@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Providers } from "@/app/providers";
 import { AuthStatus } from "@/features/auth/AuthStatus";
+import { authRequired } from "@/lib/auth-constants";
 import "@/app/globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -15,10 +16,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const needsAuth = authRequired();
+
   return (
     <html lang="ja">
       <body className={`${sans.variable} ${mono.variable} font-sans text-ink`}>
-        <Providers>
+        <Providers authRequired={needsAuth}>
           <main>
             <header className="sticky top-0 z-40 border-b border-white/30 bg-cream/80 backdrop-blur">
               <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">

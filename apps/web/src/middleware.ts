@@ -20,17 +20,19 @@ export async function middleware(request: NextRequest) {
     req: request,
     secret: resolveSecret(),
   });
+  const nowSec = Math.floor(Date.now() / 1000);
+  const exp = typeof token?.exp === "number" ? token.exp : 0;
   const email = typeof token?.email === "string" ? token.email.toLowerCase() : "";
-  if (email === getAllowedEmail()) {
+  if (email === getAllowedEmail() && exp > nowSec) {
     return NextResponse.next();
   }
 
   const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+  const callbackUrl = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  loginUrl.searchParams.set("callbackUrl", callbackUrl);
   return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
   matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|icon.png).*)"],
 };
-

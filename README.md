@@ -91,6 +91,12 @@ BRAIN_DOCK_PASSWORD_BCRYPT=...
 # BRAIN_DOCK_REQUIRE_AUTH=1
 ```
 
+セッション運用（標準設定）:
+- ログイン成功時に `httpOnly` Cookie のセッションを発行
+- 有効期限: 7日
+- ローリング更新: 24時間ごとに延長（アクティブ利用時）
+- 期限切れ時: セッション確認で自動的に `/login` へ遷移（再ログイン）
+
 パスワードハッシュ生成例:
 ```bash
 node -e "require('bcryptjs').hash(process.argv[1], 12).then(v=>console.log(v))" 'your-strong-password'

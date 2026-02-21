@@ -1,7 +1,7 @@
+import { compare } from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { authBypassed, authRequired, getAllowedEmail } from "@/lib/auth-constants";
-import { verifyEmailOtpChallenge } from "@/lib/email-otp";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -16,9 +16,8 @@ function requiredEnv(name: string): string {
 
 function parseCredentials(input: Record<string, unknown> | undefined) {
   const email = String(input?.email ?? "").trim().toLowerCase();
-  const otp = String(input?.otp ?? "").trim();
-  const challengeToken = String(input?.challengeToken ?? "").trim();
-  return { email, otp, challengeToken };
+  const password = String(input?.password ?? "");
+  return { email, password };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -35,8 +34,7 @@ export const authOptions: NextAuthOptions = {
       name: "Brain Dock Login",
       credentials: {
         email: { label: "Email", type: "email" },
-        otp: { label: "OTP", type: "text" },
-        challengeToken: { label: "Challenge Token", type: "text" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (authBypassed()) {
@@ -47,19 +45,15 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        const { email, otp, challengeToken } = parseCredentials(credentials);
+        const { email, password } = parseCredentials(credentials);
         const allowedEmail = getAllowedEmail();
-        if (!email || !otp || !challengeToken || email !== allowedEmail) {
+        if (!email || !password || email !== allowedEmail) {
           return null;
         }
 
-        const validOtp = verifyEmailOtpChallenge({
-          email,
-          otp,
-          challengeToken,
-          secret: requiredEnv("NEXTAUTH_SECRET"),
-        });
-        if (!validOtp) {
+        const passwordHash = requiredEnv("BRAIN_DOCK_PASSWORD_BCRYPT");
+        const validPassword = await compare(password, passwordHash);
+        if (!validPassword) {
           return null;
         }
 

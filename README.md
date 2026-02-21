@@ -81,20 +81,12 @@ Repository切替（Web）:
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
 ```
 
-認証（2段階: メール/パスワード + メールコード）:
+認証（メール + パスワード）:
 ```bash
 # Vercel上では認証必須（ローカルは自動バイパス）
 BRAIN_DOCK_ALLOWED_EMAIL=k-takahashi@toggle.co.jp
 NEXTAUTH_SECRET=...
 BRAIN_DOCK_PASSWORD_BCRYPT=...
-BRAIN_DOCK_SMTP_HOST=...
-BRAIN_DOCK_SMTP_PORT=587
-BRAIN_DOCK_SMTP_SECURE=0
-BRAIN_DOCK_SMTP_USER=...
-BRAIN_DOCK_SMTP_PASS=...
-BRAIN_DOCK_SMTP_FROM=...
-# 任意（秒、デフォルト300=5分）
-# BRAIN_DOCK_EMAIL_OTP_TTL_SECONDS=300
 # 任意: ローカルでも認証を強制したい場合
 # BRAIN_DOCK_REQUIRE_AUTH=1
 ```

@@ -19,7 +19,6 @@ const labels: Record<EntryType, string> = {
   learning: "学び",
   thought: "思考",
   meeting: "会議",
-  wishlist: "ほしいもの",
 };
 
 export function DashboardClient() {

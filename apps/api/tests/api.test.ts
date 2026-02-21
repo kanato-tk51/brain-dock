@@ -9,21 +9,13 @@ describe("brain-dock-api", () => {
     store = new MemoryStore();
   });
 
-  it("creates/lists/searches entries", async () => {
+  it("creates/lists/searches entries via typed capture route", async () => {
     const app = await buildApp(store);
     const created = await app.inject({
       method: "POST",
-      url: "/entries",
+      url: "/entries/learning",
       payload: {
-        declaredType: "learning",
-        title: "Retry policy",
-        body: "ネットワークの再試行を見直す",
-        tags: ["backend", "learning"],
-        occurredAtUtc: "2026-02-21T10:00:00.000Z",
-        sensitivity: "internal",
-        payload: {
-          takeaway: "指数バックオフを使う",
-        },
+        text: "指数バックオフを使う",
       },
     });
     expect(created.statusCode).toBe(201);
@@ -91,6 +83,13 @@ describe("brain-dock-api", () => {
     });
     expect(invalidType.statusCode).toBe(400);
 
+    const removedType = await app.inject({
+      method: "POST",
+      url: "/entries/wishlist",
+      payload: { text: "廃止されたタイプ" },
+    });
+    expect(removedType.statusCode).toBe(400);
+
     const invalidBody = await app.inject({
       method: "POST",
       url: "/entries/journal",
@@ -103,18 +102,9 @@ describe("brain-dock-api", () => {
     const app = await buildApp(store);
     const created = await app.inject({
       method: "POST",
-      url: "/entries",
+      url: "/entries/todo",
       payload: {
-        declaredType: "todo",
-        title: "API実装",
-        tags: [],
-        occurredAtUtc: "2026-02-21T10:00:00.000Z",
-        sensitivity: "internal",
-        payload: {
-          details: "sync queueを実装する",
-          status: "todo",
-          priority: 2,
-        },
+        text: "sync queueを実装する",
       },
     });
     const entry = created.json();

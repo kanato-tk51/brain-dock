@@ -39,32 +39,18 @@ export class MemoryStore implements DataStore {
       payload,
     });
     this.entries.set(entry.id, entry);
-    await this.enqueueSync(entry.id);
-    return entry;
-  }
-
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const current = this.entries.get(id);
-    if (!current) {
-      throw new Error(`entry not found: ${id}`);
+    const existing = [...this.syncQueue.values()].find((v) => v.entryId === entry.id && v.status === "pending");
+    if (!existing) {
+      const item: SyncQueueItem = {
+        id: newId(),
+        entryId: entry.id,
+        status: "pending",
+        createdAtUtc: now,
+        updatedAtUtc: now,
+      };
+      this.syncQueue.set(item.id, item);
     }
-    const next = entrySchema.parse({
-      ...current,
-      ...patch,
-      id,
-      updatedAtUtc: nowUtcIso(),
-    });
-    this.entries.set(id, next);
-    const historyId = newId();
-    this.history.set(historyId, {
-      id: historyId,
-      entryId: id,
-      source: "remote",
-      beforeJson: JSON.stringify(current),
-      afterJson: JSON.stringify(next),
-      createdAtUtc: nowUtcIso(),
-    });
-    return next;
+    return entry;
   }
 
   async listEntries(query?: ListQuery): Promise<Entry[]> {
@@ -74,22 +60,6 @@ export class MemoryStore implements DataStore {
   async searchEntries(query: SearchQuery): Promise<SearchResult[]> {
     const filtered = filterEntries([...this.entries.values()], query);
     return rankSearch(filtered, query.text);
-  }
-
-  async enqueueSync(entryId: string): Promise<void> {
-    const existing = [...this.syncQueue.values()].find((v) => v.entryId === entryId && v.status === "pending");
-    if (existing) {
-      return;
-    }
-    const now = nowUtcIso();
-    const item: SyncQueueItem = {
-      id: newId(),
-      entryId,
-      status: "pending",
-      createdAtUtc: now,
-      updatedAtUtc: now,
-    };
-    this.syncQueue.set(item.id, item);
   }
 
   async listSyncQueue(): Promise<SyncQueueItem[]> {

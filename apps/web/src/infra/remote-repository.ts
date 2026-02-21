@@ -1,6 +1,5 @@
 import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import type {
-  CreateEntryInput,
   Draft,
   Entry,
   EntryType,
@@ -87,16 +86,6 @@ export class RemoteRepository implements EntryRepository {
     return entrySchema.parse(raw);
   }
 
-  async createEntry(input: CreateEntryInput): Promise<Entry> {
-    const raw = await this.request<unknown>("/entries", "POST", input);
-    return entrySchema.parse(raw);
-  }
-
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const raw = await this.request<unknown>(`/entries/${id}`, "PATCH", patch);
-    return entrySchema.parse(raw);
-  }
-
   async listEntries(query?: ListQuery): Promise<Entry[]> {
     const validated = query ? listQuerySchema.parse(query) : undefined;
     const raw = await this.request<unknown[]>(
@@ -136,10 +125,6 @@ export class RemoteRepository implements EntryRepository {
 
   async loadDraft(type: EntryType): Promise<Draft | null> {
     return this.localSecurity.loadDraft(type);
-  }
-
-  async enqueueSync(entryId: string): Promise<void> {
-    await this.request("/sync-queue/enqueue", "POST", { entryId });
   }
 
   async listSyncQueue(): Promise<SyncQueueItem[]> {

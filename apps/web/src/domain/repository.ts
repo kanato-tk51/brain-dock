@@ -1,5 +1,4 @@
 import type {
-  CreateEntryInput,
   Draft,
   Entry,
   EntryType,
@@ -18,13 +17,10 @@ export type CaptureTextInput = {
 
 export interface EntryRepository {
   captureText(input: CaptureTextInput): Promise<Entry>;
-  createEntry(input: CreateEntryInput): Promise<Entry>;
-  updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
   listEntries(query?: ListQuery): Promise<Entry[]>;
   searchEntries(query: SearchQuery): Promise<SearchResult[]>;
   saveDraft(type: EntryType, draft: Record<string, unknown>): Promise<void>;
   loadDraft(type: EntryType): Promise<Draft | null>;
-  enqueueSync(entryId: string): Promise<void>;
   listSyncQueue(): Promise<SyncQueueItem[]>;
   markSynced(queueId: string, remoteId: string): Promise<void>;
   markSyncFailed(queueId: string, error: string): Promise<void>;

@@ -9,14 +9,13 @@ describe("remote repository", () => {
     vi.stubGlobal("fetch", fetchMock);
   });
 
-  it("calls API to create/list/search entries", async () => {
+  it("calls API to capture/list/search entries", async () => {
     const repo = new RemoteRepository("http://localhost:8787");
     const baseEntry = {
       id: "018ecf2e-8f8a-7b94-a112-2f0a96d1d000",
       declaredType: "thought",
-      title: "タイトル",
       body: "本文",
-      tags: ["x"],
+      tags: [],
       occurredAtUtc: "2026-02-21T10:00:00.000Z",
       sensitivity: "internal",
       createdAtUtc: "2026-02-21T10:00:00.000Z",
@@ -32,14 +31,9 @@ describe("remote repository", () => {
         new Response(JSON.stringify([{ entry: baseEntry, score: 1.2, matchedFields: ["payload"] }]), { status: 200 }),
       );
 
-    const created = await repo.createEntry({
+    const created = await repo.captureText({
       declaredType: "thought",
-      title: "タイトル",
-      body: "本文",
-      tags: ["x"],
-      occurredAtUtc: "2026-02-21T10:00:00.000Z",
-      sensitivity: "internal",
-      payload: { note: "メモ" },
+      text: "本文",
     });
     expect(created.id).toBe(baseEntry.id);
 

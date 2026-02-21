@@ -6,7 +6,6 @@ export const entryTypes = [
   "learning",
   "thought",
   "meeting",
-  "wishlist",
 ] as const;
 
 export const sensitivityLevels = ["public", "internal", "sensitive"] as const;
@@ -63,20 +62,12 @@ export const meetingPayloadSchema = z.object({
   actions: z.array(z.string().min(1)).default([]),
 });
 
-export const wishlistPayloadSchema = z.object({
-  item: z.string().min(1),
-  reason: z.string().max(500).optional(),
-  priority: z.number().int().min(1).max(5).optional(),
-  targetPrice: z.number().nonnegative().optional(),
-});
-
 export const payloadByTypeSchema = {
   journal: journalPayloadSchema,
   todo: todoPayloadSchema,
   learning: learningPayloadSchema,
   thought: thoughtPayloadSchema,
   meeting: meetingPayloadSchema,
-  wishlist: wishlistPayloadSchema,
 } as const;
 
 export const entrySchema = z.discriminatedUnion("declaredType", [
@@ -85,7 +76,6 @@ export const entrySchema = z.discriminatedUnion("declaredType", [
   baseEntrySchema.extend({ declaredType: z.literal("learning"), payload: learningPayloadSchema }),
   baseEntrySchema.extend({ declaredType: z.literal("thought"), payload: thoughtPayloadSchema }),
   baseEntrySchema.extend({ declaredType: z.literal("meeting"), payload: meetingPayloadSchema }),
-  baseEntrySchema.extend({ declaredType: z.literal("wishlist"), payload: wishlistPayloadSchema }),
 ]);
 
 export const createEntryInputSchema = z.object({

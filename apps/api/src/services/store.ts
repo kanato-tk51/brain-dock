@@ -11,10 +11,8 @@ import type {
 export interface DataStore {
   kind(): "memory" | "postgres";
   createEntry(input: CreateEntryInput): Promise<Entry>;
-  updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
   listEntries(query?: ListQuery): Promise<Entry[]>;
   searchEntries(query: SearchQuery): Promise<SearchResult[]>;
-  enqueueSync(entryId: string): Promise<void>;
   listSyncQueue(): Promise<SyncQueueItem[]>;
   markSynced(queueId: string, remoteId: string): Promise<void>;
   markSyncFailed(queueId: string, error: string): Promise<void>;

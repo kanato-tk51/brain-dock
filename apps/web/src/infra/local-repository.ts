@@ -1,4 +1,3 @@
-import { resolveLww } from "@/domain/lww";
 import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import {
   createEntryInputSchema,
@@ -150,44 +149,6 @@ export class LocalRepository implements EntryRepository {
     });
 
     return entry;
-  }
-
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const current = await this.db.entries.get(id);
-    if (!current) {
-      throw new Error(`entry not found: ${id}`);
-    }
-
-    const merged = entrySchema.parse(
-      resolveLww(current, {
-        ...current,
-        ...patch,
-        id,
-        updatedAtUtc: nowUtcIso(),
-      } as Entry),
-    );
-
-    await this.db.transaction("rw", this.db.entries, this.db.history, this.db.ftsIndex, async () => {
-      await this.db.entries.put(merged);
-      await this.db.history.put(
-        historySchema.parse({
-          id: newUuidV7(),
-          entryId: id,
-          source: "local",
-          beforeJson: JSON.stringify(current),
-          afterJson: JSON.stringify(merged),
-          createdAtUtc: nowUtcIso(),
-        }),
-      );
-      await this.db.ftsIndex.put({
-        id: id,
-        entryId: id,
-        tokens: tokenize(buildSearchableText(merged)).join(" "),
-        updatedAtUtc: nowUtcIso(),
-      });
-    });
-
-    return merged;
   }
 
   async listEntries(query?: ListQuery): Promise<Entry[]> {
@@ -410,20 +371,20 @@ export class LocalRepository implements EntryRepository {
 }
 
 function buildMinimalPayload(type: Entry["declaredType"], text: string): Record<string, unknown> {
-  if (type === "journal") {
-    return { reflection: text };
+  switch (type) {
+    case "journal":
+      return { reflection: text };
+    case "todo":
+      return { details: text, status: "todo", priority: 3 };
+    case "learning":
+      return { takeaway: text };
+    case "thought":
+      return { note: text };
+    case "meeting":
+      return { context: text, notes: text, decisions: [], actions: [] };
+    default: {
+      const unreachableType: never = type;
+      throw new Error(`unsupported entry type: ${String(unreachableType)}`);
+    }
   }
-  if (type === "todo") {
-    return { details: text, status: "todo", priority: 3 };
-  }
-  if (type === "learning") {
-    return { takeaway: text };
-  }
-  if (type === "thought") {
-    return { note: text };
-  }
-  if (type === "meeting") {
-    return { context: text, notes: text, decisions: [], actions: [] };
-  }
-  return { item: text };
 }

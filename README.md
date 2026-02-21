@@ -96,10 +96,12 @@ pnpm vercel-build-with-env
 ```
 
 主な画面:
-- `/` Dashboard (timeline + search + filters)
-- `/capture/journal|todo|learning|thought|meeting|wishlist`
+- `/` Dashboard (timeline + search + filters + inline capture)
 - `/sync`
 - `/lock`
+
+補足:
+- `/capture` と `/capture/*` は `/` へリダイレクトされます。
 
 ## ルール評価（100件ゴールド）
 ```bash

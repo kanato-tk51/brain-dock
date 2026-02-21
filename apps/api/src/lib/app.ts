@@ -3,7 +3,6 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   captureTextInputSchema,
-  createEntryInputSchema,
   entryTypeSchema,
   listQuerySchema,
   searchQuerySchema,
@@ -46,15 +45,6 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
     return { ok: true, mode: store.kind() };
   });
 
-  app.post("/entries", async (request, reply) => {
-    const parsed = createEntryInputSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "invalid body", detail: parsed.error.issues });
-    }
-    const entry = await store.createEntry(parsed.data);
-    return reply.status(201).send(entry);
-  });
-
   app.post("/entries/:type", async (request, reply) => {
     const params = z.object({ type: entryTypeSchema }).safeParse(request.params);
     if (!params.success) {
@@ -69,20 +59,6 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
     const entryInput = buildTextCaptureInput(params.data.type, parsed.data.text, parsed.data.occurredAtUtc);
     const entry = await store.createEntry(entryInput);
     return reply.status(201).send(entry);
-  });
-
-  app.patch("/entries/:id", async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!params.success) {
-      return reply.status(400).send({ error: "invalid id" });
-    }
-
-    const patch = z.record(z.string(), z.unknown()).safeParse(request.body);
-    if (!patch.success) {
-      return reply.status(400).send({ error: "invalid patch body" });
-    }
-    const entry = await store.updateEntry(params.data.id, patch.data as Record<string, unknown>);
-    return reply.send(entry);
   });
 
   app.get("/entries", async (request, reply) => {
@@ -110,15 +86,6 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
       return reply.status(400).send({ error: "invalid query", detail: query.error.issues });
     }
     return store.searchEntries(query.data);
-  });
-
-  app.post("/sync-queue/enqueue", async (request, reply) => {
-    const parsed = z.object({ entryId: z.string().uuid() }).safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "invalid body" });
-    }
-    await store.enqueueSync(parsed.data.entryId);
-    return reply.status(204).send();
   });
 
   app.get("/sync-queue", async () => {
@@ -172,20 +139,20 @@ function buildTextCaptureInput(type: EntryType, text: string, occurredAtUtc?: st
 }
 
 function buildMinimalPayload(type: EntryType, text: string): Record<string, unknown> {
-  if (type === "journal") {
-    return { reflection: text };
+  switch (type) {
+    case "journal":
+      return { reflection: text };
+    case "todo":
+      return { details: text, status: "todo", priority: 3 };
+    case "learning":
+      return { takeaway: text };
+    case "thought":
+      return { note: text };
+    case "meeting":
+      return { context: text, notes: text, decisions: [], actions: [] };
+    default: {
+      const unreachableType: never = type;
+      throw new Error(`unsupported entry type: ${String(unreachableType)}`);
+    }
   }
-  if (type === "todo") {
-    return { details: text, status: "todo", priority: 3 };
-  }
-  if (type === "learning") {
-    return { takeaway: text };
-  }
-  if (type === "thought") {
-    return { note: text };
-  }
-  if (type === "meeting") {
-    return { context: text, notes: text, decisions: [], actions: [] };
-  }
-  return { item: text };
 }

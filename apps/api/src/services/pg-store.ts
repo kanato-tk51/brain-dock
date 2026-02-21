@@ -12,12 +12,38 @@ import { createEntryInputSchema, entrySchema, syncQueueSchema, validatePayload }
 import { filterEntries, newId, nowUtcIso, searchEntries as rankSearch } from "../lib/utils.js";
 import type { DataStore } from "./store.js";
 
+function normalizeLegacyType(rawType: unknown): Entry["declaredType"] {
+  if (rawType === "journal" || rawType === "todo" || rawType === "learning" || rawType === "thought" || rawType === "meeting") {
+    return rawType;
+  }
+  if (rawType === "wishlist") {
+    return "thought";
+  }
+  throw new Error(`unsupported declared_type in app_entries: ${String(rawType)}`);
+}
+
+function normalizeLegacyPayload(type: Entry["declaredType"], payload: unknown, body?: string): Record<string, unknown> {
+  if (type !== "thought") {
+    return (payload as Record<string, unknown>) ?? {};
+  }
+  const rowPayload = (payload as Record<string, unknown>) ?? {};
+  if (typeof rowPayload.note === "string" && rowPayload.note.trim()) {
+    return rowPayload;
+  }
+  const item = typeof rowPayload.item === "string" ? rowPayload.item.trim() : "";
+  const reason = typeof rowPayload.reason === "string" ? rowPayload.reason.trim() : "";
+  const merged = [item, reason, body?.trim() ?? ""].filter(Boolean).join(" / ");
+  return { note: merged || "legacy wishlist entry" };
+}
+
 function toEntry(row: QueryResultRow): Entry {
+  const normalizedType = normalizeLegacyType(row.declared_type);
+  const body = row.body ?? undefined;
   return entrySchema.parse({
     id: row.id,
-    declaredType: row.declared_type,
+    declaredType: normalizedType,
     title: row.title ?? undefined,
-    body: row.body ?? undefined,
+    body,
     tags: Array.isArray(row.tags) ? row.tags : [],
     occurredAtUtc: new Date(row.occurred_at_utc).toISOString(),
     sensitivity: row.sensitivity,
@@ -25,7 +51,7 @@ function toEntry(row: QueryResultRow): Entry {
     updatedAtUtc: new Date(row.updated_at).toISOString(),
     syncStatus: row.sync_status,
     remoteId: row.remote_id ?? undefined,
-    payload: row.payload ?? {},
+    payload: normalizeLegacyPayload(normalizedType, row.payload, body),
   });
 }
 
@@ -157,68 +183,6 @@ export class PgStore implements DataStore {
     return entry;
   }
 
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const currentRow = await this.pool.query("select * from public.app_entries where id = $1", [id]);
-    if (currentRow.rowCount === 0) {
-      throw new Error(`entry not found: ${id}`);
-    }
-    const current = toEntry(currentRow.rows[0]);
-    const next = entrySchema.parse({
-      ...current,
-      ...patch,
-      id,
-      updatedAtUtc: nowUtcIso(),
-    });
-
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(
-        `
-        update public.app_entries
-        set declared_type = $2,
-            title = $3,
-            body = $4,
-            tags = $5::jsonb,
-            occurred_at_utc = $6::timestamptz,
-            sensitivity = $7,
-            payload = $8::jsonb,
-            sync_status = $9,
-            remote_id = $10,
-            updated_at = now()
-        where id = $1
-        `,
-        [
-          id,
-          next.declaredType,
-          next.title ?? null,
-          next.body ?? null,
-          JSON.stringify(next.tags),
-          next.occurredAtUtc,
-          next.sensitivity,
-          JSON.stringify(next.payload),
-          next.syncStatus,
-          next.remoteId ?? null,
-        ],
-      );
-      await client.query(
-        `
-        insert into public.app_history (id, entry_id, source, before_json, after_json, created_at)
-        values ($1, $2, 'remote', $3::jsonb, $4::jsonb, now())
-        `,
-        [newId(), id, JSON.stringify(current), JSON.stringify(next)],
-      );
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    return next;
-  }
-
   async listEntries(query?: ListQuery): Promise<Entry[]> {
     const rows = await this.pool.query("select * from public.app_entries order by occurred_at_utc desc limit 1000");
     return filterEntries(rows.rows.map(toEntry), query);
@@ -227,17 +191,6 @@ export class PgStore implements DataStore {
   async searchEntries(query: SearchQuery): Promise<SearchResult[]> {
     const entries = await this.listEntries(query);
     return rankSearch(entries, query.text);
-  }
-
-  async enqueueSync(entryId: string): Promise<void> {
-    await this.pool.query(
-      `
-      insert into public.app_sync_queue (id, entry_id, status, created_at, updated_at)
-      values ($1, $2, 'pending', now(), now())
-      on conflict do nothing
-      `,
-      [newId(), entryId],
-    );
   }
 
   async listSyncQueue(): Promise<SyncQueueItem[]> {

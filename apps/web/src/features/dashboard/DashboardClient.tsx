@@ -122,11 +122,11 @@ export function DashboardClient() {
         <Card className="p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold">Timeline Dashboard</h1>
+              <h1 className="text-2xl font-bold">タイムライン</h1>
             </div>
             <div className="flex items-center gap-2">
-              <Link href="/insights"><Button variant="ghost">Insights</Button></Link>
-              <Link href="/sync"><Button variant="ghost">Sync Queue</Button></Link>
+              <Link href="/insights"><Button variant="ghost">分析</Button></Link>
+              <Link href="/sync"><Button variant="ghost">同期キュー</Button></Link>
             </div>
           </div>
 
@@ -136,7 +136,7 @@ export function DashboardClient() {
               <p className="text-2xl font-bold">{stats.todayCount}</p>
             </Card>
             <Card className="bg-white/65 p-3">
-              <p className="text-xs text-ink/60">未Sync</p>
+              <p className="text-xs text-ink/60">未同期</p>
               <p className="text-2xl font-bold">{stats.pendingSync}</p>
             </Card>
             <Card className="bg-white/65 p-3">
@@ -152,7 +152,7 @@ export function DashboardClient() {
 
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold">Timeline</h2>
+            <h2 className="text-lg font-bold">投稿一覧</h2>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -174,7 +174,7 @@ export function DashboardClient() {
               >
                 {analysisRunning ? "解析中..." : `選択を解析 (${selectedEntryIds.size})`}
               </Button>
-              <Button variant="ghost" onClick={clearFilters}>Filterクリア</Button>
+              <Button variant="ghost" onClick={clearFilters}>絞り込み解除</Button>
             </div>
           </div>
           {analysisNotice ? (
@@ -252,7 +252,7 @@ export function DashboardClient() {
             placeholder="キーワード検索"
             className="mt-2 w-full rounded-xl2 border border-[#d8d2c7] bg-white/80 px-3 py-2 text-sm"
           />
-          <p className="mt-2 text-xs text-ink/60">{"exact > prefix > contains + recency boost"}</p>
+          <p className="mt-2 text-xs text-ink/60">{"完全一致 > 前方一致 > 部分一致 + 新しさ補正"}</p>
         </Card>
 
         <SimpleCaptureForm
@@ -267,7 +267,7 @@ export function DashboardClient() {
         />
 
         <Card className="p-5">
-          <h3 className="text-sm font-semibold">Date range</h3>
+          <h3 className="text-sm font-semibold">日時範囲</h3>
           <div className="mt-2 grid grid-cols-1 gap-2">
             <input
               type="datetime-local"
@@ -291,7 +291,7 @@ export function DashboardClient() {
             />
           </div>
 
-          <h3 className="mt-4 text-sm font-semibold">Tags filter</h3>
+          <h3 className="mt-4 text-sm font-semibold">タグ絞り込み</h3>
           <input
             value={tagsInput}
             onChange={(e) => {
@@ -304,7 +304,7 @@ export function DashboardClient() {
                   .filter(Boolean),
               );
             }}
-            placeholder="example: work,weekly"
+            placeholder="例: work,weekly"
             className="mt-2 w-full rounded-xl2 border border-[#d8d2c7] bg-white/80 px-3 py-2 text-sm"
           />
         </Card>

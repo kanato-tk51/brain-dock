@@ -23,6 +23,18 @@ const typeLabels: Record<EntryType, string> = {
   meeting: "会議",
 };
 
+const sourceLabels: Record<"local" | "remote", string> = {
+  local: "ローカル",
+  remote: "リモート",
+};
+
+const syncStatusLabels: Record<"pending" | "syncing" | "synced" | "failed", string> = {
+  pending: "未同期",
+  syncing: "同期中",
+  synced: "同期済み",
+  failed: "同期失敗",
+};
+
 function formatUsd(value: number): string {
   return `$${value.toFixed(6)}`;
 }
@@ -30,11 +42,11 @@ function formatUsd(value: number): string {
 type HistorySummary = {
   id: string;
   createdAtUtc: string;
-  source: string;
+  sourceLabel: string;
   typeLabel: string;
   preview: string;
-  fromStatus: string;
-  toStatus: string;
+  fromStatusLabel: string;
+  toStatusLabel: string;
 };
 
 function parseJson(value: string): Record<string, unknown> | null {
@@ -82,11 +94,11 @@ function summarizeHistory(row: HistoryRecord): HistorySummary {
   return {
     id: row.id,
     createdAtUtc: row.createdAtUtc,
-    source: row.source,
+    sourceLabel: sourceLabels[row.source],
     typeLabel,
     preview,
-    fromStatus,
-    toStatus,
+    fromStatusLabel: fromStatus in syncStatusLabels ? syncStatusLabels[fromStatus as keyof typeof syncStatusLabels] : fromStatus,
+    toStatusLabel: toStatus in syncStatusLabels ? syncStatusLabels[toStatus as keyof typeof syncStatusLabels] : toStatus,
   };
 }
 
@@ -155,7 +167,7 @@ export function InsightsClient() {
       <section className="space-y-4">
         <div className="flex items-center justify-between rounded-2xl border border-white/40 bg-white/55 p-5">
           <div>
-            <p className="text-xs uppercase tracking-widest text-ink/60">Insights</p>
+            <p className="text-xs uppercase tracking-widest text-ink/60">分析</p>
             <h1 className="text-xl font-bold">OpenAI API利用</h1>
           </div>
           <Link href="/"><Button variant="ghost">ホームへ戻る</Button></Link>
@@ -239,7 +251,7 @@ export function InsightsClient() {
 
       <section className="space-y-4">
         <div className="rounded-2xl border border-white/40 bg-white/55 p-5">
-          <h2 className="text-base font-bold">最新OpenAIリクエスト</h2>
+          <h2 className="text-base font-bold">OpenAI APIリクエスト履歴</h2>
           <div className="mt-3 space-y-2">
             {openAiRequestsQuery.data?.slice(0, 12).map((row) => (
               <div key={row.id} className="rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-2 text-xs">
@@ -282,9 +294,9 @@ export function InsightsClient() {
             {historyRows.map((row) => (
               <div key={row.id} className="rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-2 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{row.source}</Badge>
+                  <Badge>{row.sourceLabel}</Badge>
                   <Badge>{row.typeLabel}</Badge>
-                  <span className="text-ink/70">{row.fromStatus} → {row.toStatus}</span>
+                  <span className="text-ink/70">{row.fromStatusLabel} → {row.toStatusLabel}</span>
                 </div>
                 <p className="mt-1 text-ink/70">{formatLocal(row.createdAtUtc)}</p>
                 <p className="mt-1 line-clamp-2 text-ink/85">{row.preview}</p>

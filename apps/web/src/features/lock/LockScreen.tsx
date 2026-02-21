@@ -51,14 +51,14 @@ export function LockScreen() {
   };
 
   if (loading) {
-    return <div className="p-8 text-sm text-ink/70">loading...</div>;
+    return <div className="p-8 text-sm text-ink/70">読み込み中...</div>;
   }
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-8">
       <Card className="w-full p-6">
-        <p className="text-xs uppercase tracking-widest text-ink/60">Security</p>
-        <h1 className="mt-1 text-2xl font-bold">Local PIN Lock</h1>
+        <p className="text-xs uppercase tracking-widest text-ink/60">セキュリティ</p>
+        <h1 className="mt-1 text-2xl font-bold">ローカルPINロック</h1>
         <p className="mt-2 text-sm text-ink/70">
           {hasPin ? "PINで解除してください。" : "最初にPINを設定します。"}
         </p>
@@ -78,7 +78,7 @@ export function LockScreen() {
 
         <div className="mt-4 flex gap-2">
           {hasPin ? (
-            <Button onClick={onUnlock}>Unlock</Button>
+            <Button onClick={onUnlock}>ロック解除</Button>
           ) : (
             <Button onClick={onSetup}>PINを設定</Button>
           )}

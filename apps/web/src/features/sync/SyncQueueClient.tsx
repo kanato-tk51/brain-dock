@@ -17,6 +17,11 @@ const syncStatusLabels: Record<"pending" | "syncing" | "synced" | "failed", stri
   failed: "同期失敗",
 };
 
+const sourceLabels: Record<"local" | "remote", string> = {
+  local: "ローカル",
+  remote: "リモート",
+};
+
 export function SyncQueueClient() {
   const repo = useMemo(() => getRepository(), []);
   const [running, setRunning] = useState(false);
@@ -85,8 +90,8 @@ export function SyncQueueClient() {
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-widest text-ink/60">Sync</p>
-            <h1 className="text-xl font-bold">Manual Sync Queue</h1>
+            <p className="text-xs uppercase tracking-widest text-ink/60">同期</p>
+            <h1 className="text-xl font-bold">手動同期キュー</h1>
           </div>
           <Link href="/"><Button variant="ghost">戻る</Button></Link>
         </div>
@@ -101,7 +106,7 @@ export function SyncQueueClient() {
         <div className="mt-4 space-y-2">
           {queue.map((item) => (
             <Card key={item.id} className="bg-white/70 p-3">
-              <p className="text-xs text-ink/60">entry: {item.entryId}</p>
+              <p className="text-xs text-ink/60">エントリID: {item.entryId}</p>
               <div className="mt-1 flex items-center justify-between">
                 <Badge>{syncingIds.has(item.id) ? syncStatusLabels.syncing : syncStatusLabels[item.status]}</Badge>
                 <p className="text-xs text-ink/60">{formatLocal(item.createdAtUtc)}</p>
@@ -114,16 +119,16 @@ export function SyncQueueClient() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="text-lg font-bold">LWW History</h2>
-        <p className="text-sm text-ink/60">before/afterの差分ログ（source local/remote）</p>
+        <h2 className="text-lg font-bold">更新履歴（LWW）</h2>
+        <p className="text-sm text-ink/60">変更前/変更後の差分ログ（ローカル/リモート）</p>
         <div className="mt-3 space-y-2">
           {history.map((h) => (
             <Card key={h.id} className="bg-white/70 p-3">
               <div className="flex items-center justify-between gap-2">
-                <Badge>{h.source}</Badge>
+                <Badge>{sourceLabels[h.source]}</Badge>
                 <p className="text-xs text-ink/60">{formatLocal(h.createdAtUtc)}</p>
               </div>
-              <p className="mt-2 break-all font-mono text-xs text-ink/70">entry: {h.entryId}</p>
+              <p className="mt-2 break-all font-mono text-xs text-ink/70">エントリID: {h.entryId}</p>
             </Card>
           ))}
           {history.length === 0 ? <p className="text-sm text-ink/70">履歴はまだありません。</p> : null}

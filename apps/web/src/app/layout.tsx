@@ -30,7 +30,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <span>Brain Dock</span>
                 </Link>
                 <nav className="flex items-center gap-3 text-sm">
-                  <Link href="/insights" className="hover:underline">分析</Link>
+                  <Link href="/insights" className="hover:underline">料金</Link>
+                  <Link href="/analysis-history" className="hover:underline">解析履歴</Link>
                   <AuthStatus />
                 </nav>
               </div>

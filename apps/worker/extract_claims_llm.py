@@ -15,7 +15,15 @@ from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from claim_schema import ParsedClaimsOutput, claims_response_schema, parse_claims_output
+from claim_schema import (
+    SUPPORTED_PREDICATES,
+    ParsedClaim,
+    ParsedClaimLink,
+    ParsedClaimsOutput,
+    ParsedEvidenceSpan,
+    claims_response_schema,
+    parse_claims_output,
+)
 from db_runtime import (
     DEFAULT_NEON_CONNECT_TIMEOUT_S,
     DEFAULT_NEON_DSN_ENV,
@@ -41,6 +49,28 @@ MODEL_PRICING_PER_1M_USD: dict[str, dict[str, float]] = {
     "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.60},
     "gpt-4.1": {"input": 2.00, "cached_input": 0.50, "output": 8.00},
 }
+
+ME_REFERENCE_RE = re.compile(r"^(?:me|i|myself|私|わたし|僕|ぼく|俺|おれ|自分)$", re.IGNORECASE)
+ME_WORD_RE = re.compile(r"(?:\b(?:i|me|my|myself)\b|私|わたし|僕|ぼく|俺|おれ|自分)", re.IGNORECASE)
+DECISION_PREDICATES = {"chose", "ended", "decided"}
+EVENT_PREDICATES = {"happened", "experienced", "was_affected_by"}
+CAUSE_HINT_RE = re.compile(r"(because|due to|ので|から|ため|せいで)", re.IGNORECASE)
+RAIN_HINT_RE = re.compile(r"(rain|雨)", re.IGNORECASE)
+
+PREDICATE_ALIAS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(went_to|go|visit|行った|行く|向かった|訪れた)", re.IGNORECASE), "went_to"),
+    (re.compile(r"(was_with|with|一緒|同行|同期と|友達と|同僚と)", re.IGNORECASE), "was_with"),
+    (re.compile(r"(chose|choice|選んだ|決めた)", re.IGNORECASE), "chose"),
+    (re.compile(r"(ended|解散|終わった|終了した)", re.IGNORECASE), "ended"),
+    (re.compile(r"(felt|感じた|気分|emotion)", re.IGNORECASE), "felt"),
+    (re.compile(r"(learned|学んだ|覚えた)", re.IGNORECASE), "learned"),
+    (re.compile(r"(planned|予定|つもり)", re.IGNORECASE), "planned"),
+    (re.compile(r"(requested|頼んだ|依頼)", re.IGNORECASE), "requested"),
+    (re.compile(r"(affected|影響|左右)", re.IGNORECASE), "was_affected_by"),
+    (re.compile(r"(happened|起きた|発生|降った)", re.IGNORECASE), "happened"),
+    (re.compile(r"(did|した|実施|遊んだ)", re.IGNORECASE), "did"),
+    (re.compile(r"(decided|判断|決断)", re.IGNORECASE), "decided"),
+]
 
 
 def _utc_now_iso() -> str:
@@ -98,6 +128,218 @@ def _estimate_request_cost_usd(
     )
     usd = total_price_per_1m / 1_000_000
     return round(max(usd, 0.0), 6), pricing["input"], pricing["cached_input"], pricing["output"]
+
+
+def _normalize_subject_text(subject_text: str) -> str:
+    value = subject_text.strip()
+    if not value:
+        return "me"
+    if ME_REFERENCE_RE.match(value):
+        return "me"
+    return value[:120]
+
+
+def _canonicalize_predicate(predicate: str, object_text: str = "") -> str:
+    raw = predicate.strip()
+    if raw in SUPPORTED_PREDICATES:
+        return raw
+    candidate = f"{raw} {object_text}"
+    for pattern, mapped in PREDICATE_ALIAS_PATTERNS:
+        if pattern.search(candidate):
+            return mapped
+    return "mentions"
+
+
+def _is_me_related_claim(claim: ParsedClaim) -> bool:
+    if _normalize_subject_text(claim.subject_text) == "me":
+        return True
+    if ME_WORD_RE.search(claim.object_text):
+        return True
+    if claim.subject_entity_name and ME_WORD_RE.search(claim.subject_entity_name):
+        return True
+    if claim.object_entity_name and ME_WORD_RE.search(claim.object_entity_name):
+        return True
+    return False
+
+
+def _ensure_single_evidence(claim: ParsedClaim, raw_text: str) -> ParsedClaim:
+    if claim.evidence_spans:
+        return claim
+    excerpt = raw_text.strip()[:200] or claim.object_text[:200]
+    fallback_span = ParsedEvidenceSpan(char_start=None, char_end=None, excerpt=excerpt or "evidence unavailable")
+    return ParsedClaim(
+        subject_text=claim.subject_text,
+        predicate=claim.predicate,
+        object_text=claim.object_text,
+        modality=claim.modality,
+        polarity=claim.polarity,
+        certainty=claim.certainty,
+        time_start_utc=claim.time_start_utc,
+        time_end_utc=claim.time_end_utc,
+        subject_entity_name=claim.subject_entity_name,
+        object_entity_name=claim.object_entity_name,
+        evidence_spans=[fallback_span],
+    )
+
+
+def _make_fallback_me_claim(raw_text: str, occurred_at_utc: str | None) -> ParsedClaim:
+    snippet = raw_text.strip()
+    excerpt = snippet[:200] if snippet else "no text"
+    return ParsedClaim(
+        subject_text="me",
+        predicate="experienced",
+        object_text=(snippet[:1000] if snippet else "entry recorded"),
+        modality="fact",
+        polarity="affirm",
+        certainty=0.5,
+        time_start_utc=occurred_at_utc,
+        time_end_utc=None,
+        subject_entity_name=None,
+        object_entity_name=None,
+        evidence_spans=[ParsedEvidenceSpan(char_start=None, char_end=None, excerpt=excerpt)],
+    )
+
+
+def normalize_to_me_centric_claims(
+    parsed: ParsedClaimsOutput,
+    *,
+    raw_text: str,
+    declared_type: str,
+    occurred_at_utc: str | None,
+) -> ParsedClaimsOutput:
+    normalized_claims: list[ParsedClaim] = []
+    for claim in parsed.claims:
+        subject_text = _normalize_subject_text(claim.subject_text)
+        predicate = _canonicalize_predicate(claim.predicate, claim.object_text)
+        normalized = ParsedClaim(
+            subject_text=subject_text,
+            predicate=predicate,
+            object_text=claim.object_text[:1000],
+            modality=claim.modality,
+            polarity=claim.polarity,
+            certainty=claim.certainty,
+            time_start_utc=claim.time_start_utc or occurred_at_utc,
+            time_end_utc=claim.time_end_utc,
+            subject_entity_name=claim.subject_entity_name,
+            object_entity_name=claim.object_entity_name,
+            evidence_spans=claim.evidence_spans,
+        )
+        normalized_claims.append(_ensure_single_evidence(normalized, raw_text))
+
+    me_related_indexes = {idx for idx, claim in enumerate(normalized_claims) if _is_me_related_claim(claim)}
+    linked_to_me_indexes: set[int] = set()
+    for link in parsed.links:
+        if link.from_claim_index in me_related_indexes:
+            linked_to_me_indexes.add(link.to_claim_index)
+        if link.to_claim_index in me_related_indexes:
+            linked_to_me_indexes.add(link.from_claim_index)
+
+    keep_indexes = me_related_indexes | linked_to_me_indexes
+    decision_related_indexes = {
+        idx for idx, claim in enumerate(normalized_claims) if idx in keep_indexes and claim.predicate in DECISION_PREDICATES
+    }
+    if decision_related_indexes:
+        for idx, claim in enumerate(normalized_claims):
+            if idx in keep_indexes:
+                continue
+            if claim.predicate in EVENT_PREDICATES or RAIN_HINT_RE.search(claim.object_text):
+                keep_indexes.add(idx)
+                break
+
+    if not keep_indexes:
+        keep_indexes = set()
+
+    filtered_claims: list[ParsedClaim] = []
+    index_map: dict[int, int] = {}
+    for idx, claim in enumerate(normalized_claims):
+        if idx not in keep_indexes:
+            continue
+        new_idx = len(filtered_claims)
+        index_map[idx] = new_idx
+        filtered_claims.append(claim)
+
+    if not filtered_claims and declared_type in {"journal", "todo", "learning", "thought", "meeting"}:
+        filtered_claims = [_make_fallback_me_claim(raw_text, occurred_at_utc)]
+        index_map = {0: 0}
+    elif not filtered_claims:
+        filtered_claims = [_make_fallback_me_claim(raw_text, occurred_at_utc)]
+        index_map = {0: 0}
+
+    filtered_links: list[ParsedClaimLink] = []
+    for link in parsed.links:
+        if link.from_claim_index not in index_map or link.to_claim_index not in index_map:
+            continue
+        filtered_links.append(
+            ParsedClaimLink(
+                from_claim_index=index_map[link.from_claim_index],
+                to_claim_index=index_map[link.to_claim_index],
+                relation_type=link.relation_type,
+                confidence=link.confidence,
+            )
+        )
+
+    decision_indexes = [idx for idx, claim in enumerate(filtered_claims) if claim.predicate in DECISION_PREDICATES]
+    has_decision_cause = any(
+        link.relation_type == "caused_by" and link.from_claim_index in decision_indexes for link in filtered_links
+    )
+    if decision_indexes and not has_decision_cause:
+        cause_candidate_idx = -1
+        for idx, claim in enumerate(filtered_claims):
+            if idx in decision_indexes:
+                continue
+            if claim.predicate in EVENT_PREDICATES or RAIN_HINT_RE.search(claim.object_text):
+                cause_candidate_idx = idx
+                break
+        if cause_candidate_idx >= 0:
+            for decision_idx in decision_indexes:
+                filtered_links.append(
+                    ParsedClaimLink(
+                        from_claim_index=decision_idx,
+                        to_claim_index=cause_candidate_idx,
+                        relation_type="caused_by",
+                        confidence=0.75,
+                    )
+                )
+
+    if decision_indexes and not any(claim.predicate in EVENT_PREDICATES for claim in filtered_claims):
+        if RAIN_HINT_RE.search(raw_text) or CAUSE_HINT_RE.search(raw_text):
+            filtered_claims.append(
+                ParsedClaim(
+                    subject_text="context",
+                    predicate="happened",
+                    object_text=(raw_text[:180] if raw_text else "context event happened"),
+                    modality="fact",
+                    polarity="affirm",
+                    certainty=0.7,
+                    time_start_utc=occurred_at_utc,
+                    time_end_utc=None,
+                    subject_entity_name=None,
+                    object_entity_name=None,
+                    evidence_spans=[
+                        ParsedEvidenceSpan(
+                            char_start=None,
+                            char_end=None,
+                            excerpt=(raw_text[:180] if raw_text else "context event"),
+                        )
+                    ],
+                )
+            )
+            cause_idx = len(filtered_claims) - 1
+            for decision_idx in decision_indexes:
+                filtered_links.append(
+                    ParsedClaimLink(
+                        from_claim_index=decision_idx,
+                        to_claim_index=cause_idx,
+                        relation_type="caused_by",
+                        confidence=0.72,
+                    )
+                )
+
+    return ParsedClaimsOutput(
+        claims=filtered_claims,
+        entities=parsed.entities,
+        links=filtered_links,
+    )
 
 
 def _resolve_environment() -> str:
@@ -481,10 +723,14 @@ def extract_with_llm(
             {
                 "role": "system",
                 "content": (
-                    "You extract factual memory claims. "
-                    "Preserve modality and polarity. "
-                    "No speculation. "
-                    "Each claim must include at least one evidence span from the given text."
+                    "You extract factual memory claims for personal memory retrieval. "
+                    "Center extraction on the user as subject 'me'. "
+                    "Prefer claims that describe what me did, chose, felt, experienced, and with whom. "
+                    "Keep non-me events only when they affected me or explain my decisions. "
+                    "Use only allowed predicates from the schema enum. "
+                    "When a decision/action is caused by an event, output two claims and add a link relation_type='caused_by' "
+                    "from decision claim to cause claim. "
+                    "Preserve modality/polarity, avoid speculation, and include evidence spans for every claim."
                 ),
             },
             {
@@ -493,6 +739,8 @@ def extract_with_llm(
                     "Return structured claims from this document.\n\n"
                     f"declared_type={document['declared_type']}\n"
                     f"occurred_at_utc={document['occurred_at_utc']}\n"
+                    "extraction_priority=me-centric factual memory\n"
+                    "rules=focus me actions/choices/relationships/feelings; keep causes affecting me; no speculative emotions\n"
                     f"text={llm_text[:DEFAULT_LLM_MAX_INPUT_CHARS]}"
                 ),
             },
@@ -731,6 +979,12 @@ def run(args: argparse.Namespace) -> int:
             base_url=args.llm_base_url,
             api_key=api_key,
             timeout_s=args.llm_timeout,
+        )
+        parsed = normalize_to_me_centric_claims(
+            parsed,
+            raw_text=str(document.get("raw_text") or ""),
+            declared_type=str(document.get("declared_type") or ""),
+            occurred_at_utc=str(document.get("occurred_at_utc") or "") or None,
         )
 
         claims_inserted, evidence_inserted, entities_upserted, links_inserted = insert_claim_bundle(

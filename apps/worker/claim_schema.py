@@ -11,6 +11,22 @@ SUPPORTED_MODALITIES = {"fact", "plan", "hypothesis", "request", "feeling"}
 SUPPORTED_POLARITIES = {"affirm", "negate"}
 SUPPORTED_RELATIONS = {"supports", "contradicts", "caused_by", "follow_up", "same_event"}
 SUPPORTED_ENTITY_TYPES = {"person", "organization", "project", "place", "concept", "other"}
+SUPPORTED_PREDICATES = {
+    "did",
+    "was_with",
+    "went_to",
+    "experienced",
+    "chose",
+    "ended",
+    "felt",
+    "was_affected_by",
+    "happened",
+    "decided",
+    "learned",
+    "planned",
+    "requested",
+    "mentions",
+}
 
 
 def claims_response_schema() -> dict[str, Any]:
@@ -40,7 +56,7 @@ def claims_response_schema() -> dict[str, Any]:
                     ],
                     "properties": {
                         "subject_text": {"type": "string", "minLength": 1, "maxLength": 120},
-                        "predicate": {"type": "string", "minLength": 1, "maxLength": 80},
+                        "predicate": {"type": "string", "enum": sorted(SUPPORTED_PREDICATES)},
                         "object_text": {"type": "string", "minLength": 1, "maxLength": 1000},
                         "modality": {"type": "string", "enum": sorted(SUPPORTED_MODALITIES)},
                         "polarity": {"type": "string", "enum": sorted(SUPPORTED_POLARITIES)},
@@ -197,6 +213,8 @@ def parse_claims_output(payload: dict[str, Any], max_claims: int = 24) -> Parsed
         subject_text = str(item.get("subject_text", "")).strip()
         predicate = str(item.get("predicate", "")).strip()
         object_text = str(item.get("object_text", "")).strip()
+        if predicate not in SUPPORTED_PREDICATES:
+            continue
         if not subject_text or not predicate or not object_text:
             continue
 

@@ -127,7 +127,8 @@ export function DashboardClient() {
               <h1 className="text-2xl font-bold">タイムライン</h1>
             </div>
             <div className="flex items-center gap-2">
-              <Link href="/insights"><Button variant="ghost">分析</Button></Link>
+              <Link href="/analysis-history"><Button variant="ghost">解析履歴</Button></Link>
+              <Link href="/insights"><Button variant="ghost">料金</Button></Link>
             </div>
           </div>
 

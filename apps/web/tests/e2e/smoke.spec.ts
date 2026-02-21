@@ -13,9 +13,6 @@ test("dashboard shows inline capture form", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByLabel("入力タイプ")).toBeVisible();
 
-  await page.goto("/sync");
-  await expect(page.getByText("手動同期キュー")).toBeVisible();
-
   await page.goto("/insights");
   await expect(page.getByText("OpenAI API利用")).toBeVisible();
   await expect(page.getByRole("heading", { name: "解析履歴" })).toBeVisible();

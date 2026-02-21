@@ -3,7 +3,6 @@ import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
 import { Providers } from "@/app/providers";
-import { ClientGuard } from "@/app/client-guard";
 import "@/app/globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -19,7 +18,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body className={`${sans.variable} ${mono.variable} font-sans text-ink`}>
         <Providers>
-          <ClientGuard />
           <main>
             <header className="sticky top-0 z-40 border-b border-white/30 bg-cream/80 backdrop-blur">
               <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
@@ -29,8 +27,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
                 <nav className="flex items-center gap-3 text-sm">
                   <Link href="/insights" className="hover:underline">分析</Link>
-                  <Link href="/sync" className="hover:underline">同期</Link>
-                  <Link href="/lock" className="hover:underline">ロック</Link>
                 </nav>
               </div>
             </header>

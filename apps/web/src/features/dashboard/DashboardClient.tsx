@@ -126,7 +126,6 @@ export function DashboardClient() {
             </div>
             <div className="flex items-center gap-2">
               <Link href="/insights"><Button variant="ghost">分析</Button></Link>
-              <Link href="/sync"><Button variant="ghost">同期キュー</Button></Link>
             </div>
           </div>
 

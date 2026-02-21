@@ -137,6 +137,7 @@ class ExtractKeyFactsLLMTest(unittest.TestCase):
         output = json.loads(result.stdout.strip())
 
         self.assertEqual(output["extractor"], "llm")
+        self.assertEqual(output["contract_version"], "1.0")
         self.assertEqual(output["errors"], 0)
         self.assertGreater(output["facts_inserted"], 0)
 

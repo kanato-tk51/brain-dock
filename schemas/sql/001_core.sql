@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS captures_raw (
 
 CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
+  source_capture_id TEXT,
   note_type TEXT NOT NULL, -- journal, learning, thought
   title TEXT,
   summary TEXT,
@@ -43,11 +44,13 @@ CREATE TABLE IF NOT EXISTS notes (
   CHECK (note_type IN ('journal', 'learning', 'thought')),
   CHECK (mood_score IS NULL OR mood_score BETWEEN 1 AND 5),
   CHECK (energy_score IS NULL OR energy_score BETWEEN 1 AND 5),
+  FOREIGN KEY (source_capture_id) REFERENCES captures_raw(id),
   FOREIGN KEY (source_id) REFERENCES sources(id)
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  source_capture_id TEXT,
   source_note_id TEXT,
   title TEXT NOT NULL,
   details TEXT,
@@ -63,6 +66,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   deleted_at TEXT,
   CHECK (status IN ('todo', 'next', 'doing', 'done', 'canceled', 'someday')),
   CHECK (priority BETWEEN 1 AND 4),
+  FOREIGN KEY (source_capture_id) REFERENCES captures_raw(id),
   FOREIGN KEY (source_note_id) REFERENCES notes(id)
 );
 
@@ -253,11 +257,23 @@ WHERE k.deleted_at IS NULL
 
 CREATE INDEX IF NOT EXISTS idx_notes_type_time ON notes(note_type, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_journal_date ON notes(journal_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_source_capture_active
+  ON notes(source_capture_id)
+  WHERE source_capture_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_captures_status_created ON captures_raw(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_due ON tasks(status, due_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source_capture_active
+  ON tasks(source_capture_id)
+  WHERE source_capture_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_key_facts_subject_predicate ON key_facts(subject, predicate);
 CREATE INDEX IF NOT EXISTS idx_key_facts_object_text ON key_facts(object_text);
 CREATE INDEX IF NOT EXISTS idx_key_facts_note ON key_facts(note_id);
 CREATE INDEX IF NOT EXISTS idx_key_facts_task ON key_facts(task_id);
 CREATE INDEX IF NOT EXISTS idx_key_facts_occurred_confidence ON key_facts(occurred_at DESC, confidence DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_facts_note_unique_active
+  ON key_facts(note_id, subject, predicate, object_text)
+  WHERE note_id IS NOT NULL AND deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_facts_task_unique_active
+  ON key_facts(task_id, subject, predicate, object_text)
+  WHERE task_id IS NOT NULL AND deleted_at IS NULL;

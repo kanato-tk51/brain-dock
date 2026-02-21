@@ -20,6 +20,7 @@
 - 実装方式: `docs/architecture/system-design.md`
 - データモデル: `docs/architecture/data-model.md`
 - 事実抽出設計: `docs/architecture/fact-schema-and-extraction.md`
+- 置換性/性能方針: `docs/architecture/worker-portability-and-performance.md`
 - MVP(1〜2週間): `docs/mvp/mvp-1-2-weeks.md`
 - 4.x統合計画: `docs/plans/full-4x-integration.md`
 - GitHub運用: `docs/operations/github-operating-model.md`

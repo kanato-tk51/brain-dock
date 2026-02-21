@@ -17,6 +17,7 @@ from typing import Literal
 
 
 SOURCE_KIND = "ingestion-rules-v1"
+CONTRACT_VERSION = "1.0"
 MAX_TITLE_LEN = 120
 
 URL_RE = re.compile(r"https?://[^\s)>\"]+")
@@ -163,6 +164,18 @@ def write_task(
     *,
     dry_run: bool,
 ) -> str:
+    existing = conn.execute(
+        """
+        SELECT id
+        FROM tasks
+        WHERE source_capture_id = ? AND deleted_at IS NULL
+        LIMIT 1
+        """,
+        (capture["id"],),
+    ).fetchone()
+    if existing:
+        return str(existing["id"])
+
     task_id = _new_id()
     raw_text = capture["raw_text"] or ""
     if dry_run:
@@ -171,11 +184,12 @@ def write_task(
     conn.execute(
         """
         INSERT INTO tasks (
-          id, title, details, status, priority, source, sensitivity, created_at, updated_at
-        ) VALUES (?, ?, ?, 'todo', ?, 'extracted', ?, datetime('now'), datetime('now'))
+          id, source_capture_id, title, details, status, priority, source, sensitivity, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'todo', ?, 'extracted', ?, datetime('now'), datetime('now'))
         """,
         (
             task_id,
+            capture["id"],
             task_title(raw_text),
             raw_text,
             extract_priority(raw_text),
@@ -191,6 +205,18 @@ def write_note(
     *,
     dry_run: bool,
 ) -> str:
+    existing = conn.execute(
+        """
+        SELECT id
+        FROM notes
+        WHERE source_capture_id = ? AND deleted_at IS NULL
+        LIMIT 1
+        """,
+        (capture["id"],),
+    ).fetchone()
+    if existing:
+        return str(existing["id"])
+
     note_id = _new_id()
     raw_text = capture["raw_text"] or ""
     input_type = capture["input_type"] or "note"
@@ -210,13 +236,14 @@ def write_note(
     conn.execute(
         """
         INSERT INTO notes (
-          id, note_type, title, summary, body, occurred_at, journal_date,
+          id, source_capture_id, note_type, title, summary, body, occurred_at, journal_date,
           mood_score, energy_score, source_url, source_id, sensitivity, review_status,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
         """,
         (
             note_id,
+            capture["id"],
             ntype,
             note_title(raw_text, fallback=f"{ntype} note"),
             summary,
@@ -281,7 +308,7 @@ def process_one(conn: sqlite3.Connection, capture: sqlite3.Row, dry_run: bool) -
     input_type = capture["input_type"] or "note"
     raw_text = capture["raw_text"] or ""
 
-    if status == "blocked":
+    if status in {"blocked", "processed", "archived"}:
         return ("skipped", capture_id)
     if pii_score >= 0.9:
         mark_capture_blocked(conn, capture_id, dry_run=dry_run)
@@ -333,6 +360,7 @@ def run(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "processor": SOURCE_KIND,
+                "contract_version": CONTRACT_VERSION,
                 "captures_processed": created_notes + created_tasks + blocked,
                 "notes_created": created_notes,
                 "tasks_created": created_tasks,

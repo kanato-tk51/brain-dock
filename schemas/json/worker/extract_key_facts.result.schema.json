@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brain-dock/schemas/worker/extract_key_facts.result.schema.json",
+  "title": "extract_key_facts result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "extractor",
+    "contract_version",
+    "items_processed",
+    "facts_inserted",
+    "facts_skipped",
+    "facts_replaced",
+    "errors",
+    "dry_run",
+    "extractor_version"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "enum": [
+        "all",
+        "notes",
+        "tasks"
+      ]
+    },
+    "extractor": {
+      "type": "string",
+      "enum": [
+        "rules",
+        "llm"
+      ]
+    },
+    "contract_version": {
+      "type": "string"
+    },
+    "items_processed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "facts_inserted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "facts_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "facts_replaced": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "extractor_version": {
+      "type": "string"
+    }
+  }
+}

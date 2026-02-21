@@ -112,6 +112,7 @@ class ProcessCapturesTest(unittest.TestCase):
         self.assertEqual(output["tasks_created"], 1)
         self.assertEqual(output["captures_blocked"], 1)
         self.assertEqual(output["errors"], 0)
+        self.assertEqual(output["contract_version"], "1.0")
 
         notes = self.conn.execute("SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL").fetchone()[0]
         tasks = self.conn.execute("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL").fetchone()[0]
@@ -126,6 +127,16 @@ class ProcessCapturesTest(unittest.TestCase):
         self.assertEqual(statuses["cap-task"], "processed")
         self.assertEqual(statuses["cap-url"], "processed")
         self.assertEqual(statuses["cap-block"], "blocked")
+
+        # idempotent rerun should not create extra notes/tasks
+        output2 = self.run_worker()
+        self.assertEqual(output2["notes_created"], 0)
+        self.assertEqual(output2["tasks_created"], 0)
+
+        notes2 = self.conn.execute("SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL").fetchone()[0]
+        tasks2 = self.conn.execute("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL").fetchone()[0]
+        self.assertEqual(notes2, 2)
+        self.assertEqual(tasks2, 1)
 
     def test_dry_run_does_not_write(self) -> None:
         output = self.run_worker("--dry-run")

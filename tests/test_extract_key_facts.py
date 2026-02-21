@@ -86,6 +86,7 @@ class ExtractKeyFactsTest(unittest.TestCase):
     def test_extracts_facts_for_notes_and_tasks(self) -> None:
         output = self.run_worker("--source", "all")
         self.assertGreater(output["facts_inserted"], 0)
+        self.assertEqual(output["contract_version"], "1.0")
 
         count = self.conn.execute("SELECT COUNT(*) FROM key_facts WHERE deleted_at IS NULL").fetchone()[0]
         self.assertGreater(count, 0)
@@ -99,6 +100,21 @@ class ExtractKeyFactsTest(unittest.TestCase):
         self.assertIn("learned", predicates)
         self.assertIn("summary", predicates)
         self.assertIn("status", predicates)
+
+    def test_all_rows_rerun_is_idempotent(self) -> None:
+        out1 = self.run_worker("--source", "all")
+        count1 = self.conn.execute(
+            "SELECT COUNT(*) FROM key_facts WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+        self.assertGreater(count1, 0)
+
+        out2 = self.run_worker("--source", "all")
+        count2 = self.conn.execute(
+            "SELECT COUNT(*) FROM key_facts WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+
+        self.assertEqual(count2, count1)
+        self.assertGreaterEqual(out2["facts_replaced"], 1)
 
     def test_dry_run_does_not_write(self) -> None:
         output = self.run_worker("--source", "notes", "--dry-run")

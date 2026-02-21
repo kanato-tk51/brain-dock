@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brain-dock/schemas/worker/process_captures.result.schema.json",
+  "title": "process_captures result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "processor",
+    "contract_version",
+    "captures_processed",
+    "notes_created",
+    "tasks_created",
+    "captures_blocked",
+    "captures_skipped",
+    "errors",
+    "dry_run"
+  ],
+  "properties": {
+    "processor": {
+      "type": "string"
+    },
+    "contract_version": {
+      "type": "string"
+    },
+    "captures_processed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "notes_created": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tasks_created": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "captures_blocked": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "captures_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dry_run": {
+      "type": "boolean"
+    }
+  }
+}

@@ -22,6 +22,7 @@ from urllib import request as urlrequest
 
 
 EXTRACTOR_VERSION_RULES = "rules-v1"
+CONTRACT_VERSION = "1.0"
 DEFAULT_MIN_CONFIDENCE = 0.70
 DEFAULT_MAX_FACTS_PER_ITEM = 12
 DEFAULT_LLM_MODEL = "gpt-4.1-mini"
@@ -475,9 +476,9 @@ def insert_facts(
             inserted += 1
             continue
 
-        conn.execute(
+        cursor = conn.execute(
             """
-            INSERT INTO key_facts (
+            INSERT OR IGNORE INTO key_facts (
               id, note_id, task_id,
               subject, predicate, object_text, object_type,
               object_json, evidence_excerpt, occurred_at,
@@ -500,7 +501,10 @@ def insert_facts(
                 extractor_version,
             ),
         )
-        inserted += 1
+        if cursor.rowcount == 1:
+            inserted += 1
+        else:
+            skipped += 1
 
     return inserted, skipped
 
@@ -852,6 +856,7 @@ def run(args: argparse.Namespace) -> int:
             {
                 "source": args.source,
                 "extractor": extractor,
+                "contract_version": CONTRACT_VERSION,
                 "items_processed": total_items,
                 "facts_inserted": total_inserted,
                 "facts_skipped": total_skipped,

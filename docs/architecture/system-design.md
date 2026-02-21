@@ -27,6 +27,12 @@
 6. `Assist Layer`（日次/週次ブリーフ、会話準備カード）
 7. `Governance Layer`（監査、TTL、公開事故防止）
 
+## Worker境界（置換前提）
+- Workerは「DB入力 -> DB出力 + 結果JSON」の契約で固定する
+- 結果JSONは `schemas/json/worker/*.result.schema.json` に準拠
+- 冪等性はDB制約（unique partial index）で担保する
+- 実装言語は可変（Python/Go/Rust）だが契約は不変
+
 ## 3. 入力フロー（後で整理できる設計）
 ### 共通仕様
 - すべて一旦 `captures_raw` へ保存

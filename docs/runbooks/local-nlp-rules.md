@@ -20,6 +20,11 @@ python3 apps/worker/process_captures.py --backend neon --limit 200
 python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing
 ```
 
+1〜3段階を一気にテストする場合（データはデフォルトで残らない）:
+```bash
+python3 apps/cli/pipeline_test_run.py "今日の学びメモ"
+```
+
 SQLite の場合は `--backend sqlite --db ./brain_dock.db` を使う。
 
 ## ルール評価

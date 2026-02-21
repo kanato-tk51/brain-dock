@@ -1,0 +1,16 @@
+{
+  "name": "brain-dock-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream --if-present dev",
+    "web:dev": "pnpm --filter brain-dock-web dev",
+    "web:build": "pnpm --filter brain-dock-web build",
+    "web:test": "pnpm --filter brain-dock-web test",
+    "web:test:e2e": "pnpm --filter brain-dock-web test:e2e",
+    "vercel-pull-prod": "pnpm --filter brain-dock-web vercel-pull-prod",
+    "vercel-build": "pnpm --filter brain-dock-web vercel-build",
+    "vercel-build-with-env": "pnpm --filter brain-dock-web vercel-build-with-env"
+  }
+}

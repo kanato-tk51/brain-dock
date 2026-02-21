@@ -45,6 +45,8 @@
   `OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing --extractor llm`
 - `notes/tasks -> key_facts` 抽出（LLM structured output / Neon/PostgreSQL）:
   `NEON_DATABASE_URL=postgresql://... OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing --extractor llm`
+- 1〜3段階のローカル一括テスト（DBはデフォルトで残さない）:
+  `python3 apps/cli/pipeline_test_run.py "今日の学びメモ"`
 
 Neonセットアップ手順: `docs/runbooks/neon-setup.md`  
 ローカルNLP改善・評価手順: `docs/runbooks/local-nlp-rules.md`
@@ -55,6 +57,31 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Web UI (TypeScript, Next.js)
+```bash
+pnpm install
+pnpm dev
+```
+Runbook: `docs/runbooks/web-ui-local-first.md`
+`pnpm dev` は workspace 内の `apps/*` で `dev` スクリプトを並列実行するため、
+将来 `apps/api` に `dev` を追加すると同じコマンドでフロント/バック同時起動できます。
+
+Vercelローカル事前ビルドチェック:
+```bash
+pnpm vercel-build
+```
+
+環境変数込み(Production)で検証する場合:
+```bash
+pnpm vercel-build-with-env
+```
+
+主な画面:
+- `/` Dashboard (timeline + search + filters)
+- `/capture/journal|todo|learning|thought|meeting|wishlist`
+- `/sync`
+- `/lock`
 
 ## ルール評価（100件ゴールド）
 ```bash

@@ -27,6 +27,8 @@
 - 今日のTODO: `docs/next-steps/today-start.md`
 
 ## 実装済みジョブ
+- `captures_raw` へのクイック入力:
+  `python3 apps/cli/capture.py --db ./brain_dock.db "今日の学びメモ"`
 - `captures_raw -> notes/tasks` 変換:
   `python3 apps/worker/process_captures.py --db ./brain_dock.db`
 - `notes/tasks -> key_facts` 抽出（ルール）:

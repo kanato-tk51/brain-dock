@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
 import clsx from "clsx";
 
 type Props = PropsWithChildren<ButtonHTMLAttributes<HTMLButtonElement>> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "unstyled";
 };
 
 const styles: Record<NonNullable<Props["variant"]>, string> = {
@@ -14,6 +14,7 @@ const styles: Record<NonNullable<Props["variant"]>, string> = {
     "bg-transparent text-ink hover:bg-white/60 border border-white/30",
   danger:
     "bg-coral text-white hover:bg-[#e76d47] border border-[#d55f3a]",
+  unstyled: "",
 };
 
 export function Button({ children, className, variant = "primary", ...props }: Props) {

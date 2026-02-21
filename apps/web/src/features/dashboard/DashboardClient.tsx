@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { EntryType, OpenAiPeriod } from "@/domain/schemas";
+import type { EntryType } from "@/domain/schemas";
 import { entryTypes } from "@/domain/schemas";
 import { SimpleCaptureForm } from "@/features/capture/SimpleCaptureForm";
 import { getRepository } from "@/infra/repository-singleton";
@@ -22,17 +22,8 @@ const labels: Record<EntryType, string> = {
   meeting: "会議",
 };
 
-const openAiPeriodLabels: Record<OpenAiPeriod, string> = {
-  day: "日",
-  week: "週",
-  month: "月",
-};
 const analysisActionButtonClassName =
-  "rounded-full border border-[#d8d2c7] bg-[#def5e1] px-2.5 py-1 text-xs font-medium text-ink hover:bg-[#cfe9d3]";
-
-function formatUsd(value: number): string {
-  return `$${value.toFixed(6)}`;
-}
+  "rounded-full border border-[#d8d2c7] bg-white px-2.5 py-1 text-xs font-medium text-ink hover:bg-[#f6f6f4]";
 
 export function DashboardClient() {
   const repo = useMemo(() => getRepository(), []);
@@ -41,13 +32,6 @@ export function DashboardClient() {
   const [fromLocal, setFromLocal] = useState(filters.fromUtc ? toLocalInputValue(filters.fromUtc) : "");
   const [toLocal, setToLocal] = useState(filters.toUtc ? toLocalInputValue(filters.toUtc) : "");
   const [tagsInput, setTagsInput] = useState(filters.tags.join(","));
-  const [openAiPeriod, setOpenAiPeriod] = useState<OpenAiPeriod>("day");
-  const [openAiFromLocal, setOpenAiFromLocal] = useState(() =>
-    toLocalInputValue(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-  );
-  const [openAiToLocal, setOpenAiToLocal] = useState(() =>
-    toLocalInputValue(new Date().toISOString()),
-  );
   const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
@@ -67,27 +51,6 @@ export function DashboardClient() {
     queryKey: ["search", searchText, filters],
     enabled: searchText.trim().length > 0,
     queryFn: () => repo.searchEntries({ text: searchText, ...filters, limit: 200 }),
-  });
-
-  const openAiSummaryQuery = useQuery({
-    queryKey: ["openai-summary", openAiPeriod, openAiFromLocal, openAiToLocal],
-    queryFn: () =>
-      repo.getOpenAiCostSummary({
-        period: openAiPeriod,
-        fromUtc: openAiFromLocal ? toUtcIso(openAiFromLocal) : undefined,
-        toUtc: openAiToLocal ? toUtcIso(openAiToLocal) : undefined,
-        limit: 120,
-      }),
-  });
-
-  const openAiRequestsQuery = useQuery({
-    queryKey: ["openai-requests", openAiFromLocal, openAiToLocal],
-    queryFn: () =>
-      repo.listOpenAiRequests({
-        fromUtc: openAiFromLocal ? toUtcIso(openAiFromLocal) : undefined,
-        toUtc: openAiToLocal ? toUtcIso(openAiToLocal) : undefined,
-        limit: 30,
-      }),
   });
 
   const entries = searchText.trim() ? searchQuery.data?.map((v) => v.entry) ?? [] : entriesQuery.data ?? [];
@@ -161,7 +124,10 @@ export function DashboardClient() {
             <div>
               <h1 className="text-2xl font-bold">Timeline Dashboard</h1>
             </div>
-            <Link href="/sync"><Button variant="ghost">Sync Queue</Button></Link>
+            <div className="flex items-center gap-2">
+              <Link href="/insights"><Button variant="ghost">Insights</Button></Link>
+              <Link href="/sync"><Button variant="ghost">Sync Queue</Button></Link>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -201,6 +167,7 @@ export function DashboardClient() {
                 {allVisibleSelected ? "選択解除" : "全選択"}
               </Button>
               <Button
+                variant="unstyled"
                 onClick={() => runAnalysis(Array.from(selectedEntryIds))}
                 disabled={analysisRunning || selectedEntryIds.size === 0}
                 className={analysisActionButtonClassName}
@@ -260,6 +227,7 @@ export function DashboardClient() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Button
+                      variant="unstyled"
                       onClick={() => runAnalysis([entry.id])}
                       disabled={analysisRunning}
                       className={analysisActionButtonClassName}
@@ -297,100 +265,6 @@ export function DashboardClient() {
             }
           }}
         />
-
-        <Card className="p-5">
-          <h2 className="text-base font-bold">OpenAI API利用</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {(["day", "week", "month"] as const).map((period) => {
-              const active = period === openAiPeriod;
-              return (
-                <button
-                  key={period}
-                  type="button"
-                  onClick={() => setOpenAiPeriod(period)}
-                  className={`rounded-full border px-3 py-1 text-xs ${active ? "border-ink bg-ink text-cream" : "border-[#d3cbbd] bg-white/60 text-ink"}`}
-                >
-                  {openAiPeriodLabels[period]}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-2">
-            <input
-              type="datetime-local"
-              value={openAiFromLocal}
-              onChange={(e) => setOpenAiFromLocal(e.target.value)}
-              className="w-full rounded-xl2 border border-[#d8d2c7] bg-white/80 px-3 py-2 text-sm"
-            />
-            <input
-              type="datetime-local"
-              value={openAiToLocal}
-              onChange={(e) => setOpenAiToLocal(e.target.value)}
-              className="w-full rounded-xl2 border border-[#d8d2c7] bg-white/80 px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <Card className="bg-white/65 p-2">
-              <p className="text-ink/60">総コスト</p>
-              <p className="mt-1 text-sm font-semibold">
-                {formatUsd(openAiSummaryQuery.data?.totals.totalCostUsd ?? 0)}
-              </p>
-            </Card>
-            <Card className="bg-white/65 p-2">
-              <p className="text-ink/60">リクエスト数</p>
-              <p className="mt-1 text-sm font-semibold">{openAiSummaryQuery.data?.totals.requestCount ?? 0}</p>
-            </Card>
-            <Card className="bg-white/65 p-2">
-              <p className="text-ink/60">入力token</p>
-              <p className="mt-1 text-sm font-semibold">{openAiSummaryQuery.data?.totals.inputTokens ?? 0}</p>
-            </Card>
-            <Card className="bg-white/65 p-2">
-              <p className="text-ink/60">出力token</p>
-              <p className="mt-1 text-sm font-semibold">{openAiSummaryQuery.data?.totals.outputTokens ?? 0}</p>
-            </Card>
-          </div>
-
-          <div className="mt-4">
-            <p className="text-xs font-semibold text-ink/80">期間別コスト</p>
-            <div className="mt-2 space-y-1">
-              {openAiSummaryQuery.data?.buckets.slice(0, 8).map((bucket) => (
-                <div
-                  key={bucket.periodStartUtc}
-                  className="flex items-center justify-between rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-1 text-xs"
-                >
-                  <span>{formatLocal(bucket.periodStartUtc)}</span>
-                  <span>{formatUsd(bucket.totalCostUsd)} / {bucket.requestCount} req</span>
-                </div>
-              ))}
-              {(openAiSummaryQuery.data?.buckets.length ?? 0) === 0 ? (
-                <p className="text-xs text-ink/65">集計データがありません。</p>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <p className="text-xs font-semibold text-ink/80">最新リクエスト</p>
-            <div className="mt-2 space-y-2">
-              {openAiRequestsQuery.data?.slice(0, 8).map((row) => (
-                <div key={row.id} className="rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{row.model}</span>
-                    <Badge className={row.status === "ok" ? "bg-[#def5e1]" : "bg-[#ffe8e1]"}>{row.status}</Badge>
-                  </div>
-                  <p className="mt-1 text-ink/70">{formatLocal(row.requestStartedAtUtc)}</p>
-                  <p className="mt-1 text-ink/75">{row.operation ?? row.workflow ?? row.endpoint}</p>
-                  <p className="mt-1 text-ink/75">
-                    {formatUsd(row.requestCostUsd)} / {row.totalTokens} tokens
-                  </p>
-                </div>
-              ))}
-              {(openAiRequestsQuery.data?.length ?? 0) === 0 ? (
-                <p className="text-xs text-ink/65">履歴データがありません。</p>
-              ) : null}
-            </div>
-          </div>
-        </Card>
 
         <Card className="p-5">
           <h3 className="text-sm font-semibold">Date range</h3>

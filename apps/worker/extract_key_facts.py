@@ -20,6 +20,8 @@ from typing import Any, Iterable, Literal
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from json_contract import validate_contract, worker_schema_path
+
 
 EXTRACTOR_VERSION_RULES = "rules-v1"
 CONTRACT_VERSION = "1.0"
@@ -851,23 +853,20 @@ def run(args: argparse.Namespace) -> int:
     finally:
         conn.close()
 
-    print(
-        json.dumps(
-            {
-                "source": args.source,
-                "extractor": extractor,
-                "contract_version": CONTRACT_VERSION,
-                "items_processed": total_items,
-                "facts_inserted": total_inserted,
-                "facts_skipped": total_skipped,
-                "facts_replaced": total_replaced,
-                "errors": errors,
-                "dry_run": args.dry_run,
-                "extractor_version": extractor_version,
-            },
-            ensure_ascii=False,
-        )
-    )
+    result_payload = {
+        "source": args.source,
+        "extractor": extractor,
+        "contract_version": CONTRACT_VERSION,
+        "items_processed": total_items,
+        "facts_inserted": total_inserted,
+        "facts_skipped": total_skipped,
+        "facts_replaced": total_replaced,
+        "errors": errors,
+        "dry_run": args.dry_run,
+        "extractor_version": extractor_version,
+    }
+    validate_contract(worker_schema_path("extract_key_facts"), result_payload)
+    print(json.dumps(result_payload, ensure_ascii=False))
     return 0
 
 

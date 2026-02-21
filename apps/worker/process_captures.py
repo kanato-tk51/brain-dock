@@ -15,6 +15,8 @@ import sqlite3
 import uuid
 from typing import Literal
 
+from json_contract import validate_contract, worker_schema_path
+
 
 SOURCE_KIND = "ingestion-rules-v1"
 CONTRACT_VERSION = "1.0"
@@ -356,22 +358,19 @@ def run(args: argparse.Namespace) -> int:
     finally:
         conn.close()
 
-    print(
-        json.dumps(
-            {
-                "processor": SOURCE_KIND,
-                "contract_version": CONTRACT_VERSION,
-                "captures_processed": created_notes + created_tasks + blocked,
-                "notes_created": created_notes,
-                "tasks_created": created_tasks,
-                "captures_blocked": blocked,
-                "captures_skipped": skipped,
-                "errors": errors,
-                "dry_run": args.dry_run,
-            },
-            ensure_ascii=False,
-        )
-    )
+    result_payload = {
+        "processor": SOURCE_KIND,
+        "contract_version": CONTRACT_VERSION,
+        "captures_processed": created_notes + created_tasks + blocked,
+        "notes_created": created_notes,
+        "tasks_created": created_tasks,
+        "captures_blocked": blocked,
+        "captures_skipped": skipped,
+        "errors": errors,
+        "dry_run": args.dry_run,
+    }
+    validate_contract(worker_schema_path("process_captures"), result_payload)
+    print(json.dumps(result_payload, ensure_ascii=False))
     return 0
 
 

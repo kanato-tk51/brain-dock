@@ -46,3 +46,7 @@
 - 結果JSONがスキーマ準拠
 - DB制約違反ゼロ
 - 冪等再実行で行数が不必要に増えない
+
+## 実装メモ
+- `apps/worker/json_contract.py` で実行時に結果JSONを検証
+- 各ワーカーは `print` 前に `validate_contract(...)` を必須化

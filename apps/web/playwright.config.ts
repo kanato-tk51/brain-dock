@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: "./tests/e2e",
   webServer: {
     command: "pnpm build && pnpm start --port 3100",
+    env: {
+      NEXTAUTH_URL: "http://localhost:3100",
+    },
     port: 3100,
     timeout: 180000,
     reuseExistingServer: false,

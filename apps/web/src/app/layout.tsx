@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
 import { Providers } from "@/app/providers";
+import { AuthStatus } from "@/features/auth/AuthStatus";
 import "@/app/globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
                 <nav className="flex items-center gap-3 text-sm">
                   <Link href="/insights" className="hover:underline">分析</Link>
+                  <AuthStatus />
                 </nav>
               </div>
             </header>

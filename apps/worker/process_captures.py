@@ -25,7 +25,9 @@ from db_runtime import (
     open_connection,
     to_text_datetime,
 )
+from japanese_nlp import tokenize_with_lemma
 from json_contract import validate_contract, worker_schema_path
+from rule_lexicon import ACTION_HINT_LEMMAS, CLASSIFICATION_LEMMAS, TIME_HINT_LEMMAS
 
 
 SOURCE_KIND = "ingestion-rules-v1"
@@ -58,6 +60,8 @@ LEADING_TASK_PREFIX_RE = re.compile(
 )
 
 RowLike = Mapping[str, Any]
+TASK_SCORE_THRESHOLD = 2.2
+AMBIGUOUS_MARGIN = 0.35
 
 
 def _new_id() -> str:
@@ -81,24 +85,83 @@ def first_non_empty_line(text: str) -> str:
     return ""
 
 
-def detect_note_type(input_type: str, text: str) -> Literal["journal", "learning", "thought"]:
+def _norm_lemma(value: str) -> str:
+    return value.strip().lower()
+
+
+def _lemma_scores(text: str) -> dict[str, float]:
+    tokens = tokenize_with_lemma(text)
+    lemma_set = {_norm_lemma(t.lemma) for t in tokens if _norm_lemma(t.lemma)}
+    scores = {"task": 0.0, "journal": 0.0, "learning": 0.0, "thought": 0.0}
+
+    for category, hints in CLASSIFICATION_LEMMAS.items():
+        hits = lemma_set.intersection({_norm_lemma(h) for h in hints})
+        if hits:
+            scores[category] += min(len(hits), 5) * 0.55
+
+    if lemma_set.intersection({_norm_lemma(v) for v in TIME_HINT_LEMMAS}):
+        scores["journal"] += 0.8
+    if lemma_set.intersection({_norm_lemma(v) for v in ACTION_HINT_LEMMAS}):
+        scores["task"] += 0.8
+    return scores
+
+
+def classify_capture(input_type: str, text: str) -> dict[str, Any]:
+    scores = {"task": 0.0, "journal": 0.0, "learning": 0.0, "thought": 0.0}
+
+    if input_type == "task":
+        scores["task"] += 4.0
     if input_type == "url":
-        return "learning"
+        scores["learning"] += 3.5
+
+    if TASK_HINT_RE.search(text):
+        scores["task"] += 2.6
     if LEARNING_HINT_RE.search(text):
-        return "learning"
+        scores["learning"] += 2.0
     if JOURNAL_HINT_RE.search(text):
-        return "journal"
+        scores["journal"] += 1.8
     if THOUGHT_HINT_RE.search(text):
-        return "thought"
-    return "thought"
+        scores["thought"] += 1.5
+
+    url = extract_url(text)
+    if url:
+        scores["learning"] += 1.2
+        text_without_url = re.sub(URL_RE, "", text).strip()
+        if not text_without_url:
+            scores["learning"] += 1.0
+
+    text_len = len(text.strip())
+    if text_len <= 6:
+        scores["thought"] += 0.9
+    if "?" in text or "？" in text:
+        scores["thought"] += 0.35
+
+    lemma_component = _lemma_scores(text)
+    for key, val in lemma_component.items():
+        scores[key] += val
+
+    is_task = scores["task"] >= TASK_SCORE_THRESHOLD
+    non_task_scores = {k: scores[k] for k in ("journal", "learning", "thought")}
+    sorted_non_task = sorted(non_task_scores.items(), key=lambda kv: kv[1], reverse=True)
+    top_label, top_score = sorted_non_task[0]
+    second_score = sorted_non_task[1][1]
+    note_type: Literal["journal", "learning", "thought"] = "thought"
+    if (top_score - second_score) > AMBIGUOUS_MARGIN:
+        note_type = top_label  # type: ignore[assignment]
+
+    return {
+        "is_task": is_task,
+        "note_type": note_type,
+        "score_breakdown": {k: round(v, 3) for k, v in scores.items()},
+    }
+
+
+def detect_note_type(input_type: str, text: str) -> Literal["journal", "learning", "thought"]:
+    return classify_capture(input_type, text)["note_type"]
 
 
 def detect_task_like(input_type: str, text: str) -> bool:
-    if input_type == "task":
-        return True
-    if TASK_HINT_RE.search(text):
-        return True
-    return False
+    return bool(classify_capture(input_type, text)["is_task"])
 
 
 def extract_url(text: str) -> str | None:
@@ -218,6 +281,7 @@ def write_note(
     conn: Any,
     capture: RowLike,
     *,
+    note_type: Literal["journal", "learning", "thought"] | None = None,
     dry_run: bool,
 ) -> str:
     existing = fetch_one(
@@ -237,7 +301,7 @@ def write_note(
     raw_text = capture["raw_text"] or ""
     input_type = capture["input_type"] or "note"
     occurred_at = to_text_datetime(capture["occurred_at"] or capture["created_at"])
-    ntype = detect_note_type(input_type, raw_text)
+    ntype = note_type or detect_note_type(input_type, raw_text)
     source_url = extract_url(raw_text)
     summary = clamp(raw_text, 160)
     if source_url:
@@ -329,6 +393,7 @@ def process_one(conn: Any, capture: RowLike, dry_run: bool) -> tuple[str, str]:
     pii_score = float(capture["pii_score"] or 0)
     input_type = capture["input_type"] or "note"
     raw_text = capture["raw_text"] or ""
+    classification = classify_capture(input_type, raw_text)
 
     if status in {"blocked", "processed", "archived"}:
         return ("skipped", capture_id)
@@ -336,12 +401,17 @@ def process_one(conn: Any, capture: RowLike, dry_run: bool) -> tuple[str, str]:
         mark_capture_blocked(conn, capture_id, dry_run=dry_run)
         return ("blocked", capture_id)
 
-    if detect_task_like(input_type, raw_text):
+    if classification["is_task"]:
         task_id = write_task(conn, capture, dry_run=dry_run)
         mark_capture_processed(conn, capture_id, parsed_task_id=task_id, dry_run=dry_run)
         return ("task", task_id)
 
-    note_id = write_note(conn, capture, dry_run=dry_run)
+    note_id = write_note(
+        conn,
+        capture,
+        note_type=classification["note_type"],
+        dry_run=dry_run,
+    )
     mark_capture_processed(conn, capture_id, parsed_note_id=note_id, dry_run=dry_run)
     return ("note", note_id)
 

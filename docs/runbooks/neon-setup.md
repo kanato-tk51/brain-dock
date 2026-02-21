@@ -18,6 +18,13 @@ Neon SQL Editor か `psql` で以下を実行する。
 psql "$NEON_DATABASE_URL" -f neon/migrations/20260221130000_initial_schema.sql
 ```
 
+## 1.5 Python依存導入
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## 2. 環境変数設定
 
 ```bash
@@ -55,4 +62,4 @@ limit 20;
 
 ## 注意
 - Neon 接続する CLI/worker には `psycopg` が必要。
-  - `pip install 'psycopg[binary]'`
+  - `pip install -r requirements.txt`

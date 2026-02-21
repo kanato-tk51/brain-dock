@@ -30,7 +30,9 @@ from db_runtime import (
     open_connection,
     now_expr,
 )
+from japanese_nlp import MorphToken, tokenize_with_lemma
 from json_contract import validate_contract, worker_schema_path
+from rule_lexicon import OBJECT_STOP_LEMMAS, PREDICATE_LEMMA_HINTS
 
 
 EXTRACTOR_VERSION_RULES = "rules-v1"
@@ -45,16 +47,21 @@ DEFAULT_LLM_MAX_INPUT_CHARS = 6000
 SUPPORTED_OBJECT_TYPES = {"text", "number", "date", "bool", "json"}
 
 PREDICATE_HINTS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"(学ん|学び|learned?|気づ|わかった|理解|insight)", re.IGNORECASE), "learned"),
+    (
+        re.compile(r"(学ん|学び|学習|learned?|気づ|わかった|理解|insight)", re.IGNORECASE),
+        "learned",
+    ),
     (re.compile(r"(決め|決定|decid|choose|選ん)", re.IGNORECASE), "decided"),
     (re.compile(r"(課題|問題|詰ま|blocked|障害|困|難し)", re.IGNORECASE), "blocked_by"),
-    (re.compile(r"(改善|improve|良くな|効率化|optimi)", re.IGNORECASE), "improved"),
-    (re.compile(r"(次|next|todo|やる|やりたい|will)", re.IGNORECASE), "next_action"),
-    (re.compile(r"(試し|試した|検証|experiment|test)", re.IGNORECASE), "tested"),
-    (re.compile(r"(感じ|feel|疲|つら|嬉|楽しい|不安)", re.IGNORECASE), "felt"),
+    (re.compile(r"(改善|improve|良くな|効率化|最適|optimi)", re.IGNORECASE), "improved"),
+    (re.compile(r"(次|next|todo|やる|やりたい|will|明日|次回|予定)", re.IGNORECASE), "next_action"),
+    (re.compile(r"(試し|試した|試験|実験|実施|検証|experiment|test)", re.IGNORECASE), "tested"),
+    (re.compile(r"(感じ|feel|疲|つら|嬉|楽しい|不安|安心|緊張|落ち込|モヤモヤ)", re.IGNORECASE), "felt"),
 ]
 
 BULLET_RE = re.compile(r"^\s*(?:[-*・]|[0-9]+[.)])\s+")
+DATE_CANDIDATE_RE = re.compile(r"(?:\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?|今日|昨日|明日)")
+NUMBER_CANDIDATE_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 RowLike = Mapping[str, Any]
 
@@ -86,15 +93,85 @@ def split_sentences(text: str) -> list[str]:
     out: list[str] = []
     for part in parts:
         cleaned = re.sub(r"\s+", " ", part).strip()
-        if 8 <= len(cleaned) <= 240:
+        if not (4 <= len(cleaned) <= 240):
+            continue
+        tokens = tokenize_with_lemma(cleaned)
+        if tokens and len(tokens) <= 1 and len(cleaned) < 10:
+            continue
+        if len(cleaned) >= 4:
             out.append(cleaned)
     return out
 
 
-def detect_predicate(sentence: str) -> tuple[str, float]:
+def _norm_lemma(value: str) -> str:
+    return value.strip().lower()
+
+
+def _object_type_and_json(predicate: str, object_text: str) -> tuple[str, str | None]:
+    if predicate in {"journal_date", "due_at", "scheduled_at", "completed_at"}:
+        return "date", None
+    if DATE_CANDIDATE_RE.search(object_text):
+        return "date", None
+
+    number_match = NUMBER_CANDIDATE_RE.search(object_text)
+    if predicate in {"mood_score", "energy_score", "priority"} or (
+        number_match and object_text.strip() == number_match.group(0)
+    ):
+        try:
+            value = float(number_match.group(0)) if number_match else float(object_text)
+            return "number", json.dumps({"value": value}, ensure_ascii=False)
+        except Exception:
+            return "number", None
+
+    return "text", None
+
+
+def _extract_object_text(sentence: str, predicate: str, tokens: list[MorphToken]) -> str:
+    if not tokens:
+        return clamp_text(sentence, 1000)
+
+    hints = {_norm_lemma(v) for v in PREDICATE_LEMMA_HINTS.get(predicate, set())}
+    predicate_idx = -1
+    for idx, tok in enumerate(tokens):
+        if _norm_lemma(tok.lemma) in hints:
+            predicate_idx = idx
+            break
+
+    if predicate_idx >= 0:
+        window = tokens[max(0, predicate_idx - 4) : min(len(tokens), predicate_idx + 5)]
+    else:
+        window = tokens
+
+    object_parts: list[str] = []
+    for tok in window:
+        lemma = _norm_lemma(tok.lemma)
+        if not lemma or lemma in OBJECT_STOP_LEMMAS:
+            continue
+        if tok.pos.startswith("名詞") or tok.pos.startswith("形容詞") or tok.pos.startswith("動詞"):
+            object_parts.append(tok.surface)
+
+    if not object_parts:
+        for tok in tokens:
+            lemma = _norm_lemma(tok.lemma)
+            if tok.pos.startswith("名詞") and lemma not in OBJECT_STOP_LEMMAS:
+                object_parts.append(tok.surface)
+
+    object_text = "".join(object_parts).strip()
+    if len(object_text) < 2:
+        object_text = sentence
+    return clamp_text(object_text, 1000)
+
+
+def detect_predicate(sentence: str, *, tokens: list[MorphToken] | None = None) -> tuple[str, float]:
     for pattern, predicate in PREDICATE_HINTS:
         if pattern.search(sentence):
             return predicate, 0.82
+
+    token_list = tokens if tokens is not None else tokenize_with_lemma(sentence)
+    lemma_set = {_norm_lemma(tok.lemma) for tok in token_list if _norm_lemma(tok.lemma)}
+    for predicate, hints in PREDICATE_LEMMA_HINTS.items():
+        if lemma_set.intersection({_norm_lemma(v) for v in hints}):
+            return predicate, 0.79
     return "mentions", 0.72
 
 
@@ -200,12 +277,17 @@ def extract_from_note_rules(row: RowLike, max_facts: int) -> list[Fact]:
     text = "\n".join([title, summary, body]).strip()
     sentences = split_sentences(text)
     for sentence in sentences:
-        predicate, confidence = detect_predicate(sentence)
+        tokens = tokenize_with_lemma(sentence)
+        predicate, confidence = detect_predicate(sentence, tokens=tokens)
+        object_text = _extract_object_text(sentence, predicate, tokens)
+        object_type, object_json = _object_type_and_json(predicate, object_text)
         facts.append(
             Fact(
                 subject=subject,
                 predicate=predicate,
-                object_text=clamp_text(sentence, 1000),
+                object_text=object_text,
+                object_type=object_type,
+                object_json=object_json,
                 evidence_excerpt=clamp_text(sentence, 350),
                 occurred_at=occurred_at,
                 confidence=confidence,
@@ -286,15 +368,20 @@ def extract_from_task_rules(row: RowLike, max_facts: int) -> list[Fact]:
 
     text = "\n".join([title, details]).strip()
     for sentence in split_sentences(text):
-        predicate, confidence = detect_predicate(sentence)
+        tokens = tokenize_with_lemma(sentence)
+        predicate, confidence = detect_predicate(sentence, tokens=tokens)
         if BULLET_RE.match(sentence) or predicate == "next_action":
             predicate = "next_action"
             confidence = max(confidence, 0.84)
+        object_text = _extract_object_text(sentence, predicate, tokens)
+        object_type, object_json = _object_type_and_json(predicate, object_text)
         facts.append(
             Fact(
                 subject=subject,
                 predicate=predicate,
-                object_text=clamp_text(sentence, 1000),
+                object_text=object_text,
+                object_type=object_type,
+                object_json=object_json,
                 evidence_excerpt=clamp_text(sentence, 350),
                 confidence=confidence,
             )
@@ -306,19 +393,44 @@ def extract_from_task_rules(row: RowLike, max_facts: int) -> list[Fact]:
 
 
 def dedupe_facts(facts: Iterable[Fact], max_facts: int) -> list[Fact]:
-    seen: set[tuple[str, str, str]] = set()
+    seen_exact: set[tuple[str, str, str]] = set()
+    seen_normalized: set[tuple[str, str, str]] = set()
     out: list[Fact] = []
     for fact in facts:
         key = fact.key()
         if not key[0] or not key[1] or not key[2]:
             continue
-        if key in seen:
+
+        normalized_object = _normalize_for_dedupe(fact.object_text)
+        normalized_key = (
+            _norm_lemma(fact.subject),
+            _norm_lemma(fact.predicate),
+            normalized_object,
+        )
+
+        if key in seen_exact or normalized_key in seen_normalized:
             continue
-        seen.add(key)
+        seen_exact.add(key)
+        seen_normalized.add(normalized_key)
         out.append(fact)
         if len(out) >= max_facts:
             break
     return out
+
+
+def _normalize_for_dedupe(text: str) -> str:
+    tokens = tokenize_with_lemma(text)
+    if tokens:
+        lemmas = [
+            _norm_lemma(tok.lemma)
+            for tok in tokens
+            if _norm_lemma(tok.lemma) and _norm_lemma(tok.lemma) not in OBJECT_STOP_LEMMAS
+        ]
+        if lemmas:
+            return " ".join(lemmas[:16])
+    cleaned = re.sub(r"\s+", "", text).lower()
+    cleaned = re.sub(r"[^0-9a-zぁ-んァ-ヶ一-龠ー]", "", cleaned)
+    return cleaned
 
 
 def validate_fact_schema(fact: Fact) -> tuple[bool, str | None]:

@@ -1,0 +1,100 @@
+{"id": "task-1", "input_type": "quick", "text": "TODO: PRレビューをする", "expected_label": "task"}
+{"id": "task-2", "input_type": "quick", "text": "明日までに資料を提出する", "expected_label": "task"}
+{"id": "task-3", "input_type": "quick", "text": "やること: 週報を更新", "expected_label": "task"}
+{"id": "task-4", "input_type": "quick", "text": "task: 面談の日程を調整する", "expected_label": "task"}
+{"id": "task-5", "input_type": "quick", "text": "next: DBマイグレーションを実行する", "expected_label": "task"}
+{"id": "task-6", "input_type": "quick", "text": "期限までに契約書ドラフトを修正する", "expected_label": "task"}
+{"id": "task-7", "input_type": "quick", "text": "宿題: APIのタイムアウト値を見直す", "expected_label": "task"}
+{"id": "task-8", "input_type": "quick", "text": "TODO P1 バグ再現手順を書く", "expected_label": "task"}
+{"id": "task-9", "input_type": "quick", "text": "明日やる: 企画書を清書する", "expected_label": "task"}
+{"id": "task-10", "input_type": "quick", "text": "対応する: 請求書の確認", "expected_label": "task"}
+{"id": "task-11", "input_type": "quick", "text": "レビューコメントへ返信する", "expected_label": "task"}
+{"id": "task-12", "input_type": "quick", "text": "タスク: 新しいチェックリスト作成", "expected_label": "task"}
+{"id": "task-13", "input_type": "quick", "text": "締切前に発表資料を仕上げる", "expected_label": "task"}
+{"id": "task-14", "input_type": "quick", "text": "TODO: ミーティング議事録を送る", "expected_label": "task"}
+{"id": "task-15", "input_type": "quick", "text": "やることリストを整理する", "expected_label": "task"}
+{"id": "task-16", "input_type": "quick", "text": "次のアクションはKPI表を更新すること", "expected_label": "task"}
+{"id": "task-17", "input_type": "quick", "text": "提出物を最終確認して送信する", "expected_label": "task"}
+{"id": "task-18", "input_type": "quick", "text": "来週までに採用要件を定義する", "expected_label": "task"}
+{"id": "task-19", "input_type": "quick", "text": "task 監視アラート閾値を調整", "expected_label": "task"}
+{"id": "task-20", "input_type": "quick", "text": "TODO 会議室を予約する", "expected_label": "task"}
+{"id": "task-21", "input_type": "quick", "text": "やる: 退勤前にテストを回す", "expected_label": "task"}
+{"id": "task-22", "input_type": "quick", "text": "宿題として失敗原因をまとめる", "expected_label": "task"}
+{"id": "task-23", "input_type": "quick", "text": "期限: 金曜までに提案書作成", "expected_label": "task"}
+{"id": "task-24", "input_type": "quick", "text": "次に行う作業はREADME更新", "expected_label": "task"}
+{"id": "task-25", "input_type": "quick", "text": "対応: セキュリティチェックを実施", "expected_label": "task"}
+{"id": "journal-1", "input_type": "note", "text": "今日の振り返り。mood:4 energy:3 朝は集中できた。", "expected_label": "journal"}
+{"id": "journal-2", "input_type": "note", "text": "昨日は睡眠不足で体調が悪かった。", "expected_label": "journal"}
+{"id": "journal-3", "input_type": "note", "text": "朝ランして気分が上がった日記。", "expected_label": "journal"}
+{"id": "journal-4", "input_type": "note", "text": "夜に散歩して落ち着いた。", "expected_label": "journal"}
+{"id": "journal-5", "input_type": "note", "text": "今日の体調メモ: 頭痛は軽い。", "expected_label": "journal"}
+{"id": "journal-6", "input_type": "note", "text": "昨日の振り返りで先延ばしに気づいた。", "expected_label": "journal"}
+{"id": "journal-7", "input_type": "note", "text": "日記: 朝は低気圧でだるかった。", "expected_label": "journal"}
+{"id": "journal-8", "input_type": "note", "text": "今日のmood 5、energy 4 で調子が良い。", "expected_label": "journal"}
+{"id": "journal-9", "input_type": "note", "text": "夜は食べ過ぎたので反省。", "expected_label": "journal"}
+{"id": "journal-10", "input_type": "note", "text": "今日の睡眠は6時間で少し眠い。", "expected_label": "journal"}
+{"id": "journal-11", "input_type": "note", "text": "昨日の気分は2で集中できなかった。", "expected_label": "journal"}
+{"id": "journal-12", "input_type": "note", "text": "日記メモ: 朝に瞑想して落ち着いた。", "expected_label": "journal"}
+{"id": "journal-13", "input_type": "note", "text": "今日の体調はまあまあ、肩こりあり。", "expected_label": "journal"}
+{"id": "journal-14", "input_type": "note", "text": "昨日は会議が多くて疲れた。", "expected_label": "journal"}
+{"id": "journal-15", "input_type": "note", "text": "朝の散歩で気分転換できた。", "expected_label": "journal"}
+{"id": "journal-16", "input_type": "note", "text": "夜は早めに寝ると決めた日記。", "expected_label": "journal"}
+{"id": "journal-17", "input_type": "note", "text": "今日の振り返り: 人に感謝を伝えられた。", "expected_label": "journal"}
+{"id": "journal-18", "input_type": "note", "text": "昨日の生活ログ。運動はできなかった。", "expected_label": "journal"}
+{"id": "journal-19", "input_type": "note", "text": "日記として、今日は食事を整えた。", "expected_label": "journal"}
+{"id": "journal-20", "input_type": "note", "text": "今日の気分メモ: 不安は少なめ。", "expected_label": "journal"}
+{"id": "journal-21", "input_type": "note", "text": "昨日の睡眠が浅くて午前はぼんやり。", "expected_label": "journal"}
+{"id": "journal-22", "input_type": "note", "text": "朝にストレッチして体調が改善。", "expected_label": "journal"}
+{"id": "journal-23", "input_type": "note", "text": "夜の振り返り。集中時間は短かった。", "expected_label": "journal"}
+{"id": "journal-24", "input_type": "note", "text": "今日は体調安定、mood:3 energy:3。", "expected_label": "journal"}
+{"id": "journal-25", "input_type": "note", "text": "昨日の反省: 夜更かしをした。", "expected_label": "journal"}
+{"id": "learning-1", "input_type": "url", "text": "この記事で学んだ: キャッシュ戦略 https://example.com/cache", "expected_label": "learning"}
+{"id": "learning-2", "input_type": "note", "text": "読書メモ。学びは「抽象化の重要性」。", "expected_label": "learning"}
+{"id": "learning-3", "input_type": "note", "text": "動画で学習した内容を整理する。", "expected_label": "learning"}
+{"id": "learning-4", "input_type": "note", "text": "本を読んで理解したのは失敗の構造。", "expected_label": "learning"}
+{"id": "learning-5", "input_type": "url", "text": "https://example.com/ml", "expected_label": "learning"}
+{"id": "learning-6", "input_type": "note", "text": "学び: SQLのウィンドウ関数が便利。", "expected_label": "learning"}
+{"id": "learning-7", "input_type": "note", "text": "記事から気づき。仕様より運用が大事。", "expected_label": "learning"}
+{"id": "learning-8", "input_type": "note", "text": "読んだ論文のlessonを3行でメモ。", "expected_label": "learning"}
+{"id": "learning-9", "input_type": "note", "text": "learned: retry with backoff", "expected_label": "learning"}
+{"id": "learning-10", "input_type": "note", "text": "knowledgeメモ: 認知負荷を減らす設計。", "expected_label": "learning"}
+{"id": "learning-11", "input_type": "url", "text": "記事ログ URLと要点を残す https://example.com/note", "expected_label": "learning"}
+{"id": "learning-12", "input_type": "note", "text": "学習ログ: 英語の前置詞の使い分け。", "expected_label": "learning"}
+{"id": "learning-13", "input_type": "note", "text": "動画メモ: 面接の回答構造。", "expected_label": "learning"}
+{"id": "learning-14", "input_type": "note", "text": "読書で得たinsightを記録。", "expected_label": "learning"}
+{"id": "learning-15", "input_type": "note", "text": "記事を調べて理解したのは権限分離。", "expected_label": "learning"}
+{"id": "learning-16", "input_type": "note", "text": "学んだこと: テストは小さく速く。", "expected_label": "learning"}
+{"id": "learning-17", "input_type": "url", "text": "https://example.com/security 安全設計の学び", "expected_label": "learning"}
+{"id": "learning-18", "input_type": "note", "text": "本メモ。気づきは質問の質。", "expected_label": "learning"}
+{"id": "learning-19", "input_type": "note", "text": "調べてわかった: index設計の勘所。", "expected_label": "learning"}
+{"id": "learning-20", "input_type": "note", "text": "学習: 数学の極限の復習。", "expected_label": "learning"}
+{"id": "learning-21", "input_type": "note", "text": "learn note: feature flag rollout", "expected_label": "learning"}
+{"id": "learning-22", "input_type": "note", "text": "記事要約: 失敗を先に潰す。", "expected_label": "learning"}
+{"id": "learning-23", "input_type": "note", "text": "動画から理解したのは説明順序。", "expected_label": "learning"}
+{"id": "learning-24", "input_type": "note", "text": "読書ログ: 行動につながる学びを抽出。", "expected_label": "learning"}
+{"id": "learning-25", "input_type": "url", "text": "https://example.com/ai-memory 学びメモ", "expected_label": "learning"}
+{"id": "thought-1", "input_type": "note", "text": "この方針で本当に良いのか？", "expected_label": "thought"}
+{"id": "thought-2", "input_type": "note", "text": "考えメモ: 価値提供の順番を見直したい。", "expected_label": "thought"}
+{"id": "thought-3", "input_type": "note", "text": "なぜ最近集中が切れやすいのだろう。", "expected_label": "thought"}
+{"id": "thought-4", "input_type": "note", "text": "仮説: 朝に重い仕事を置くべき。", "expected_label": "thought"}
+{"id": "thought-5", "input_type": "note", "text": "不安はあるが挑戦したい。", "expected_label": "thought"}
+{"id": "thought-6", "input_type": "note", "text": "idea: 学習ログを先に要約してから保存", "expected_label": "thought"}
+{"id": "thought-7", "input_type": "note", "text": "how to 継続率を上げるか", "expected_label": "thought"}
+{"id": "thought-8", "input_type": "note", "text": "should we reduce meetings?", "expected_label": "thought"}
+{"id": "thought-9", "input_type": "note", "text": "メモ", "expected_label": "thought"}
+{"id": "thought-10", "input_type": "note", "text": "悩み: 優先順位が揺れている。", "expected_label": "thought"}
+{"id": "thought-11", "input_type": "note", "text": "考えごと。今は守りを固めるべきか。", "expected_label": "thought"}
+{"id": "thought-12", "input_type": "note", "text": "疑問: どこまで自動化するべき？", "expected_label": "thought"}
+{"id": "thought-13", "input_type": "note", "text": "方針案を2つ比較したい。", "expected_label": "thought"}
+{"id": "thought-14", "input_type": "note", "text": "思考ログ: やらないことを決める。", "expected_label": "thought"}
+{"id": "thought-15", "input_type": "note", "text": "why このタスクに時間がかかる?", "expected_label": "thought"}
+{"id": "thought-16", "input_type": "note", "text": "アイデア断片: 週次レビューを軽くする", "expected_label": "thought"}
+{"id": "thought-17", "input_type": "note", "text": "迷いがあるので判断軸を言語化する。", "expected_label": "thought"}
+{"id": "thought-18", "input_type": "note", "text": "メモ: 価値観に沿った選択をしたい。", "expected_label": "thought"}
+{"id": "thought-19", "input_type": "note", "text": "不確実性が高いので小さく試すべき。", "expected_label": "thought"}
+{"id": "thought-20", "input_type": "note", "text": "考え: 完璧主義を減らしたい。", "expected_label": "thought"}
+{"id": "thought-21", "input_type": "note", "text": "疑問メモ", "expected_label": "thought"}
+{"id": "thought-22", "input_type": "note", "text": "この決定の副作用は何か。", "expected_label": "thought"}
+{"id": "thought-23", "input_type": "note", "text": "仮説を検証する方法を考える。", "expected_label": "thought"}
+{"id": "thought-24", "input_type": "note", "text": "今の方向性でいい？", "expected_label": "thought"}
+{"id": "thought-25", "input_type": "note", "text": "思考の棚卸しをしたい。", "expected_label": "thought"}

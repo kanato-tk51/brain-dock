@@ -1,0 +1,100 @@
+{"id": "learned-1", "item_type": "note", "text": "記事を読んでキャッシュ設計を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-2", "item_type": "note", "text": "動画で回帰テストの重要性を理解した。", "expected": {"predicate": "learned", "object_contains": "理解"}}
+{"id": "learned-3", "item_type": "note", "text": "本を読んで抽象化の価値に気づいた。", "expected": {"predicate": "learned", "object_contains": "理解"}}
+{"id": "learned-4", "item_type": "note", "text": "障害対応を通してretry戦略を学習した。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-5", "item_type": "note", "text": "SQLの実行計画の読み方を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-6", "item_type": "note", "text": "設計レビューで境界条件の考え方を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-7", "item_type": "note", "text": "ドキュメントから権限分離を理解した。", "expected": {"predicate": "learned", "object_contains": "理解"}}
+{"id": "learned-8", "item_type": "note", "text": "英語学習で前置詞の使い方を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-9", "item_type": "note", "text": "数学ノートで極限の直感を理解した。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-10", "item_type": "note", "text": "記事からSLO設計の観点を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-11", "item_type": "note", "text": "読書で意思決定のフレームを学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-12", "item_type": "note", "text": "pair作業で小さく出す考え方を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-13", "item_type": "note", "text": "ログ分析からボトルネック特定法を学んだ。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "learned-14", "item_type": "note", "text": "動画講座でprompt設計を学習した。", "expected": {"predicate": "learned", "object_contains": "学"}}
+{"id": "decided-1", "item_type": "note", "text": "次の四半期は検索機能を優先すると決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-2", "item_type": "note", "text": "週次レビューを金曜朝に固定すると決定した。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-3", "item_type": "note", "text": "学習テーマを数学に絞ると決める。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-4", "item_type": "note", "text": "会議時間を25分に短縮する方針を決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-5", "item_type": "note", "text": "買い物は今月は見送ると決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-6", "item_type": "note", "text": "朝の最初は最重要タスクをやると決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-7", "item_type": "note", "text": "通知は最低限にする運用を決定した。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-8", "item_type": "note", "text": "日記は夜に3行だけ書くと決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-9", "item_type": "note", "text": "週報テンプレを一本化すると決める。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-10", "item_type": "note", "text": "旅行計画は早めに予約すると決定した。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-11", "item_type": "note", "text": "健康の記録は要約だけ残すと決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-12", "item_type": "note", "text": "連絡は結論先に伝えると決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-13", "item_type": "note", "text": "Inbox整理は日曜にまとめてやると決定。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "decided-14", "item_type": "note", "text": "バックアップは毎週実行すると決めた。", "expected": {"predicate": "decided", "object_contains": "決"}}
+{"id": "blocked-1", "item_type": "note", "text": "データ欠損が問題で分析が詰まった。", "expected": {"predicate": "blocked_by", "object_contains": "問題"}}
+{"id": "blocked-2", "item_type": "note", "text": "認可設定の不整合が障害になっている。", "expected": {"predicate": "blocked_by", "object_contains": "障害"}}
+{"id": "blocked-3", "item_type": "note", "text": "依存関係の衝突でビルドが通らず困った。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-4", "item_type": "note", "text": "要件が曖昧な課題で進行が止まった。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-5", "item_type": "note", "text": "ネットワーク遅延がボトルネックで詰まる。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-6", "item_type": "note", "text": "レビュー待ちが問題で着手できない。", "expected": {"predicate": "blocked_by", "object_contains": "問題"}}
+{"id": "blocked-7", "item_type": "note", "text": "権限不足が障害でデプロイできない。", "expected": {"predicate": "blocked_by", "object_contains": "障害"}}
+{"id": "blocked-8", "item_type": "note", "text": "時間見積もりミスが課題になった。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-9", "item_type": "note", "text": "テストデータ不足が問題だった。", "expected": {"predicate": "blocked_by", "object_contains": "問題"}}
+{"id": "blocked-10", "item_type": "note", "text": "設計方針の不一致で詰まっている。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-11", "item_type": "note", "text": "環境差分が障害で再現できない。", "expected": {"predicate": "blocked_by", "object_contains": "障害"}}
+{"id": "blocked-12", "item_type": "note", "text": "優先度競合が問題で遅延した。", "expected": {"predicate": "blocked_by", "object_contains": "問題"}}
+{"id": "blocked-13", "item_type": "note", "text": "資料不足が課題で判断できない。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "blocked-14", "item_type": "note", "text": "要員不足で進捗が詰まった。", "expected": {"predicate": "blocked_by", "object_contains": "課題"}}
+{"id": "improved-1", "item_type": "note", "text": "チェックリストを改善して抜け漏れが減った。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-2", "item_type": "note", "text": "バッチ処理を効率化して時間を短縮した。", "expected": {"predicate": "improved", "object_contains": "効率"}}
+{"id": "improved-3", "item_type": "note", "text": "テンプレを最適化して作業が早くなった。", "expected": {"predicate": "improved", "object_contains": "最適"}}
+{"id": "improved-4", "item_type": "note", "text": "クエリ改善で応答速度が良くなった。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-5", "item_type": "note", "text": "通知設定を見直して集中が改善した。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-6", "item_type": "note", "text": "レビュー手順を改善し品質が上がった。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-7", "item_type": "note", "text": "議事録フォーマットを最適化した。", "expected": {"predicate": "improved", "object_contains": "最適"}}
+{"id": "improved-8", "item_type": "note", "text": "朝ルーティンを改善して立ち上がりが良い。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-9", "item_type": "note", "text": "命名規則を改善して読みやすくなった。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-10", "item_type": "note", "text": "キャッシュ戦略を最適化して負荷が下がった。", "expected": {"predicate": "improved", "object_contains": "最適"}}
+{"id": "improved-11", "item_type": "note", "text": "エラーメッセージ改善で復旧が速くなった。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-12", "item_type": "note", "text": "検索条件を改善して見つけやすくなった。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "improved-13", "item_type": "note", "text": "保存フローを最適化して入力が楽になった。", "expected": {"predicate": "improved", "object_contains": "最適"}}
+{"id": "improved-14", "item_type": "note", "text": "習慣記録の粒度を改善した。", "expected": {"predicate": "improved", "object_contains": "改善"}}
+{"id": "next-1", "item_type": "note", "text": "次にやることは週報テンプレを更新する。", "expected": {"predicate": "next_action", "object_contains": "更新"}}
+{"id": "next-2", "item_type": "task", "text": "TODO: 失敗原因を3行でまとめる。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-3", "item_type": "note", "text": "次回は先に要件を確認する。", "expected": {"predicate": "next_action", "object_contains": "確認"}}
+{"id": "next-4", "item_type": "note", "text": "やること: バックアップ設定を見直す。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-5", "item_type": "note", "text": "next action はDBインデックスを追加。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-6", "item_type": "note", "text": "明日は日記の要約処理を実装する。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-7", "item_type": "note", "text": "次のアクションとしてテストケースを増やす。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-8", "item_type": "task", "text": "TODO リリース手順を再確認する。", "expected": {"predicate": "next_action", "object_contains": "確認"}}
+{"id": "next-9", "item_type": "note", "text": "次は資料の図を修正する。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-10", "item_type": "note", "text": "やる: 週次レビュー項目を整理。", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-11", "item_type": "task", "text": "- API仕様の未確定箇所を確認する", "expected": {"predicate": "next_action", "object_contains": "確認"}}
+{"id": "next-12", "item_type": "task", "text": "- TODO 監視閾値を更新する", "expected": {"predicate": "next_action", "object_contains": "更新"}}
+{"id": "next-13", "item_type": "task", "text": "- 次回までに比較表を作る", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "next-14", "item_type": "task", "text": "- やること: 学習ログの分類を調整", "expected": {"predicate": "next_action", "object_contains": "次"}}
+{"id": "tested-1", "item_type": "note", "text": "新しい抽出ルールを試した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-2", "item_type": "note", "text": "A/B案を検証して差分を確認した。", "expected": {"predicate": "tested", "object_contains": "検証"}}
+{"id": "tested-3", "item_type": "note", "text": "回帰テストを実施して挙動を確認した。", "expected": {"predicate": "tested", "object_contains": "テスト"}}
+{"id": "tested-4", "item_type": "note", "text": "プロトタイプをexperimentして評価した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-5", "item_type": "note", "text": "性能テストを試し、閾値を調整した。", "expected": {"predicate": "tested", "object_contains": "テスト"}}
+{"id": "tested-6", "item_type": "note", "text": "サンプル100件で検証した。", "expected": {"predicate": "tested", "object_contains": "検証"}}
+{"id": "tested-7", "item_type": "note", "text": "新UIをtestして操作性を確認した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-8", "item_type": "note", "text": "負荷試験を実施した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-9", "item_type": "note", "text": "抽出器を切り替えて検証した。", "expected": {"predicate": "tested", "object_contains": "検証"}}
+{"id": "tested-10", "item_type": "note", "text": "想定外入力を試してみた。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-11", "item_type": "note", "text": "LLMなしルールを試した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-12", "item_type": "note", "text": "比較実験をして結果を記録した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-13", "item_type": "note", "text": "回帰セットでtestした。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "tested-14", "item_type": "note", "text": "辞書拡張を試験導入した。", "expected": {"predicate": "tested", "object_contains": "試"}}
+{"id": "felt-1", "item_type": "note", "text": "今日は疲れて集中が続かなかった。", "expected": {"predicate": "felt", "object_contains": "疲"}}
+{"id": "felt-2", "item_type": "note", "text": "不安が強くて判断が鈍った。", "expected": {"predicate": "felt", "object_contains": "不安"}}
+{"id": "felt-3", "item_type": "note", "text": "嬉しくて作業が進んだ。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-4", "item_type": "note", "text": "つらいが少し前進できた。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-5", "item_type": "note", "text": "楽しい気分で学習できた。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-6", "item_type": "note", "text": "焦りを感じている。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-7", "item_type": "note", "text": "安心して進められた。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-8", "item_type": "note", "text": "疲労感がありペースを落とした。", "expected": {"predicate": "felt", "object_contains": "疲"}}
+{"id": "felt-9", "item_type": "note", "text": "達成感を感じた。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-10", "item_type": "note", "text": "落ち込みがあった。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-11", "item_type": "note", "text": "緊張して言葉が出にくかった。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-12", "item_type": "note", "text": "気持ちが軽くなった。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "felt-13", "item_type": "note", "text": "不安はあるが挑戦したいと感じる。", "expected": {"predicate": "felt", "object_contains": "不安"}}
+{"id": "felt-14", "item_type": "note", "text": "モヤモヤしている。", "expected": {"predicate": "felt", "object_contains": "気"}}
+{"id": "date-1", "item_type": "note", "text": "次の受診日は2026-03-01に決めた。", "expected": {"predicate": "decided", "object_contains": "2026"}}
+{"id": "number-1", "item_type": "note", "text": "気分スコアは4で、今日は学びが多かった。", "expected": {"predicate": "learned", "object_contains": "学"}}

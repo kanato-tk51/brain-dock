@@ -46,7 +46,21 @@
 - `notes/tasks -> key_facts` 抽出（LLM structured output / Neon/PostgreSQL）:
   `NEON_DATABASE_URL=postgresql://... OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing --extractor llm`
 
-Neonセットアップ手順: `docs/runbooks/neon-setup.md`
+Neonセットアップ手順: `docs/runbooks/neon-setup.md`  
+ローカルNLP改善・評価手順: `docs/runbooks/local-nlp-rules.md`
+
+## ローカルNLP依存の導入
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## ルール評価（100件ゴールド）
+```bash
+python3 scripts/eval/eval_rules.py
+python3 scripts/eval/eval_rules.py --enforce
+```
 
 ## リポジトリ構成
 - `apps/`: 実アプリ（CLI / API / UI）

@@ -22,6 +22,7 @@
 - 事実抽出設計: `docs/architecture/fact-schema-and-extraction.md`
 - 置換性/性能方針: `docs/architecture/worker-portability-and-performance.md`
 - 4.x統合計画: `docs/plans/full-4x-integration.md`
+- 実装バックログ（次にやること）: `docs/plans/implementation-backlog.md`
 - GitHub運用: `docs/operations/github-operating-model.md`
 
 ## 実装済みジョブ

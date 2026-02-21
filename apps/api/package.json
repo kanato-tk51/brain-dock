@@ -1,0 +1,27 @@
+{
+  "name": "brain-dock-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "db:migrate:neon": "node scripts/apply-neon-migrations.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.1.0",
+    "fastify": "^5.1.0",
+    "pg": "^8.13.1",
+    "uuid": "^11.0.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

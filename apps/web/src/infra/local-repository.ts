@@ -261,19 +261,65 @@ export class LocalRepository implements EntryRepository {
       throw new Error(`entry not found for sync queue: ${queueItem.entryId}`);
     }
 
-    await this.db.transaction("rw", this.db.syncQueue, this.db.entries, async () => {
+    await this.db.transaction("rw", this.db.syncQueue, this.db.entries, this.db.history, async () => {
       await this.db.syncQueue.put({
         ...queueItem,
         status: "synced",
         updatedAtUtc: nowUtcIso(),
+        lastError: undefined,
       });
 
-      await this.db.entries.put(
-        entrySchema.parse({
-          ...entry,
-          syncStatus: "synced",
-          remoteId,
-          updatedAtUtc: nowUtcIso(),
+      const next = entrySchema.parse({
+        ...entry,
+        syncStatus: "synced",
+        remoteId,
+        updatedAtUtc: nowUtcIso(),
+      });
+      await this.db.entries.put(next);
+      await this.db.history.put(
+        historySchema.parse({
+          id: newUuidV7(),
+          entryId: entry.id,
+          source: "remote",
+          beforeJson: JSON.stringify(entry),
+          afterJson: JSON.stringify(next),
+          createdAtUtc: nowUtcIso(),
+        }),
+      );
+    });
+  }
+
+  async markSyncFailed(queueId: string, error: string): Promise<void> {
+    const queueItem = await this.db.syncQueue.get(queueId);
+    if (!queueItem) {
+      throw new Error(`sync queue not found: ${queueId}`);
+    }
+    const entry = await this.db.entries.get(queueItem.entryId);
+    if (!entry) {
+      throw new Error(`entry not found for sync queue: ${queueItem.entryId}`);
+    }
+
+    await this.db.transaction("rw", this.db.syncQueue, this.db.entries, this.db.history, async () => {
+      await this.db.syncQueue.put({
+        ...queueItem,
+        status: "failed",
+        lastError: error.slice(0, 400),
+        updatedAtUtc: nowUtcIso(),
+      });
+      const next = entrySchema.parse({
+        ...entry,
+        syncStatus: "failed",
+        updatedAtUtc: nowUtcIso(),
+      });
+      await this.db.entries.put(next);
+      await this.db.history.put(
+        historySchema.parse({
+          id: newUuidV7(),
+          entryId: entry.id,
+          source: "remote",
+          beforeJson: JSON.stringify(entry),
+          afterJson: JSON.stringify(next),
+          createdAtUtc: nowUtcIso(),
         }),
       );
     });

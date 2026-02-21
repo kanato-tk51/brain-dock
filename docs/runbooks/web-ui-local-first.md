@@ -10,7 +10,14 @@ pnpm dev
 ```
 
 `pnpm dev` は `apps/*` の `dev` スクリプトを並列実行する。
-現状は `apps/web` のみ起動し、将来 `apps/api` に `dev` を追加すると同時起動される。
+現状は `apps/web` と `apps/api` が同時起動される。
+
+RepositoryをAPI接続に切り替える場合:
+```bash
+export NEXT_PUBLIC_REPOSITORY_MODE=remote
+export NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
+pnpm dev
+```
 
 ## URL
 - `http://localhost:3000/`
@@ -22,6 +29,7 @@ pnpm dev
 - `http://localhost:3000/capture/wishlist`
 - `http://localhost:3000/sync`
 - `http://localhost:3000/lock`
+- `http://localhost:8787/health` (API health)
 
 ## テスト
 ```bash
@@ -32,6 +40,9 @@ pnpm web:test
 ```bash
 pnpm vercel-build
 ```
+
+このコマンドは Neon migration 実行後に Web build を行う。
+実行には `NEON_DATABASE_URL` が必要。
 
 Production環境変数をpullしてから確認する場合:
 ```bash

@@ -8,11 +8,15 @@
 - 最後に「自動化と会話アシスト」を積む
 
 ## P0（次に着手）
-- [ ] `apps/api` の最小実装（health, create-entry, list/search-entry, sync-queue）
-- [ ] Web の `RemoteRepository` を API 接続で動作させる（feature flagでLocal/Remote切替）
-- [ ] `sync` 画面で手動送信を実装（pending -> syncing -> synced/failed）
-- [ ] 競合解決を実装（LWW + history記録をUI表示）
+- [x] `apps/api` の最小実装（health, create-entry, list/search-entry, sync-queue）
+- [x] Web の `RemoteRepository` を API 接続で動作させる（feature flagでLocal/Remote切替）
+- [x] `sync` 画面で手動送信を実装（pending -> syncing -> synced/failed）
+- [x] 競合解決を実装（LWW + history記録をUI表示）
 - [ ] Neon の読み書き統合テストを追加（API + worker + web）
+
+補足:
+- Neon統合は `apps/api/tests/neon.integration.test.ts` を追加済み（API単体）。
+- `API + worker + web` を一気通貫で検証するE2Eは未実装。
 
 ## P1（データ契約の固定）
 - [ ] 6入力タイプごとの API 入力契約（Zod/JSON Schema）を固定
@@ -47,4 +51,3 @@
 - [ ] Runbook/README が更新されている
 - [ ] 手元で `pnpm dev` と `pnpm vercel-build` が通る
 - [ ] Pythonワーカー側は `requirements.txt` で再現可能
-

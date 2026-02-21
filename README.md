@@ -32,6 +32,8 @@
   `NEON_DATABASE_URL=postgresql://... python3 apps/cli/capture.py --backend neon "ブラウザ経由メモ"`
 - Neon 初期マイグレーション:
   `neon/migrations/20260221130000_initial_schema.sql`
+- Web/API 用マイグレーション:
+  `neon/migrations/20260221220000_web_api_tables.sql`
 - `captures_raw -> notes/tasks` 変換:
   `python3 apps/worker/process_captures.py --db ./brain_dock.db`
 - `captures_raw -> notes/tasks` 変換（Neon/PostgreSQL）:
@@ -64,14 +66,30 @@ pnpm dev
 ```
 Runbook: `docs/runbooks/web-ui-local-first.md`
 `pnpm dev` は workspace 内の `apps/*` で `dev` スクリプトを並列実行するため、
-将来 `apps/api` に `dev` を追加すると同じコマンドでフロント/バック同時起動できます。
+現在は `apps/web` と `apps/api` が同時起動されます。
+
+API単体起動:
+```bash
+pnpm api:dev
+```
+
+Repository切替（Web）:
+```bash
+# local | hybrid | remote
+NEXT_PUBLIC_REPOSITORY_MODE=remote
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
+```
 
 Vercelローカル事前ビルドチェック:
 ```bash
 pnpm vercel-build
 ```
 
-環境変数込み(Production)で検証する場合:
+`pnpm vercel-build` は以下を順に実行:
+- Neon migration (`pnpm db:migrate:neon` -> `apps/api/scripts/apply-neon-migrations.mjs`)
+- Web build (`next build`)
+
+環境変数込み(Production)で検証する場合（Vercel env pull + migration + build）:
 ```bash
 pnpm vercel-build-with-env
 ```

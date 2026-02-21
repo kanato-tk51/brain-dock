@@ -13,6 +13,7 @@ import { formatLocal } from "@/shared/utils/time";
 export function SyncQueueClient() {
   const repo = useMemo(() => getRepository(), []);
   const [running, setRunning] = useState(false);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
 
   const queueQuery = useQuery({
@@ -27,14 +28,39 @@ export function SyncQueueClient() {
 
   const runSync = async () => {
     setRunning(true);
+    setSyncingIds(new Set());
     setMessage(null);
     try {
       const queue = await repo.listSyncQueue();
       const pending = queue.filter((q) => q.status === "pending");
+      let success = 0;
+      let failed = 0;
       for (const item of pending) {
-        await repo.markSynced(item.id, `remote-${newUuidV7()}`);
+        setSyncingIds((prev) => {
+          const next = new Set(prev);
+          next.add(item.id);
+          return next;
+        });
+        try {
+          await repo.markSynced(item.id, `remote-${newUuidV7()}`);
+          success += 1;
+        } catch (err) {
+          failed += 1;
+          const reason = err instanceof Error ? err.message : "unknown sync error";
+          try {
+            await repo.markSyncFailed(item.id, reason);
+          } catch {
+            // avoid aborting the remaining queue items if failure-reporting fails
+          }
+        } finally {
+          setSyncingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+        }
       }
-      setMessage(`${pending.length}件を同期しました`);
+      setMessage(`同期完了: 成功 ${success}件 / 失敗 ${failed}件`);
       await queueQuery.refetch();
       await historyQuery.refetch();
     } catch (err) {
@@ -70,9 +96,10 @@ export function SyncQueueClient() {
             <Card key={item.id} className="bg-white/70 p-3">
               <p className="text-xs text-ink/60">entry: {item.entryId}</p>
               <div className="mt-1 flex items-center justify-between">
-                <Badge>{item.status}</Badge>
+                <Badge>{syncingIds.has(item.id) ? "syncing" : item.status}</Badge>
                 <p className="text-xs text-ink/60">{formatLocal(item.createdAtUtc)}</p>
               </div>
+              {item.lastError ? <p className="mt-1 text-xs text-[#9a3317]">{item.lastError}</p> : null}
             </Card>
           ))}
           {queue.length === 0 ? <p className="text-sm text-ink/70">キューは空です。</p> : null}

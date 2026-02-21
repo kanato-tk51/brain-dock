@@ -11,11 +11,16 @@
 Neon SQL Editor か `psql` で以下を実行する。
 
 - `neon/migrations/20260221130000_initial_schema.sql`
+- `neon/migrations/20260221220000_web_api_tables.sql`
 
 例:
 
 ```bash
 psql "$NEON_DATABASE_URL" -f neon/migrations/20260221130000_initial_schema.sql
+psql "$NEON_DATABASE_URL" -f neon/migrations/20260221220000_web_api_tables.sql
+
+# またはリポジトリの一括適用コマンド（Node + pg）
+pnpm db:migrate:neon
 ```
 
 ## 1.5 Python依存導入

@@ -1,30 +1,23 @@
 import type {
   CreateEntryInput,
-  Draft,
   Entry,
-  EntryType,
   HistoryRecord,
   ListQuery,
   SearchQuery,
   SearchResult,
   SyncQueueItem,
-} from "@/domain/schemas";
+} from "../lib/schemas.js";
 
-export interface EntryRepository {
+export interface DataStore {
+  kind(): "memory" | "postgres";
   createEntry(input: CreateEntryInput): Promise<Entry>;
   updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
   listEntries(query?: ListQuery): Promise<Entry[]>;
   searchEntries(query: SearchQuery): Promise<SearchResult[]>;
-  saveDraft(type: EntryType, draft: Record<string, unknown>): Promise<void>;
-  loadDraft(type: EntryType): Promise<Draft | null>;
   enqueueSync(entryId: string): Promise<void>;
   listSyncQueue(): Promise<SyncQueueItem[]>;
   markSynced(queueId: string, remoteId: string): Promise<void>;
   markSyncFailed(queueId: string, error: string): Promise<void>;
   listHistory(entryId?: string): Promise<HistoryRecord[]>;
-  lockWithPin(pin: string): Promise<void>;
-  unlockWithPin(pin: string): Promise<boolean>;
-  hasPin(): Promise<boolean>;
-  isLocked(): Promise<boolean>;
-  setLocked(locked: boolean): Promise<void>;
+  close?(): Promise<void>;
 }

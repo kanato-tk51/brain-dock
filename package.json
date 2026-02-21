@@ -5,12 +5,16 @@
   "packageManager": "pnpm@10.17.0",
   "scripts": {
     "dev": "pnpm -r --parallel --stream --if-present dev",
+    "api:dev": "pnpm --filter brain-dock-api dev",
+    "api:test": "pnpm --filter brain-dock-api test",
+    "api:build": "pnpm --filter brain-dock-api build",
     "web:dev": "pnpm --filter brain-dock-web dev",
     "web:build": "pnpm --filter brain-dock-web build",
     "web:test": "pnpm --filter brain-dock-web test",
     "web:test:e2e": "pnpm --filter brain-dock-web test:e2e",
+    "db:migrate:neon": "pnpm --filter brain-dock-api db:migrate:neon",
     "vercel-pull-prod": "pnpm --filter brain-dock-web vercel-pull-prod",
-    "vercel-build": "pnpm --filter brain-dock-web vercel-build",
-    "vercel-build-with-env": "pnpm --filter brain-dock-web vercel-build-with-env"
+    "vercel-build": "pnpm db:migrate:neon && pnpm --filter brain-dock-web build",
+    "vercel-build-with-env": "pnpm vercel-pull-prod && pnpm vercel-build"
   }
 }

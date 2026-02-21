@@ -67,4 +67,32 @@ describe("local repository integration", () => {
     const updated = await repo.listEntries();
     expect(updated[0].syncStatus).toBe("synced");
   });
+
+  it("marks sync failure and keeps queue error", async () => {
+    const repo = new LocalRepository();
+    const entry = await repo.createEntry({
+      declaredType: "todo",
+      title: "Retry sync",
+      body: "",
+      tags: [],
+      occurredAtUtc: "2026-02-21T10:00:00.000Z",
+      sensitivity: "internal",
+      payload: {
+        details: "retry after network error",
+        status: "todo",
+        priority: 2,
+      },
+    });
+
+    const queue = await repo.listSyncQueue();
+    const target = queue.find((q) => q.entryId === entry.id)!;
+    await repo.markSyncFailed(target.id, "network timeout");
+
+    const queueAfter = await repo.listSyncQueue();
+    expect(queueAfter.find((q) => q.id === target.id)?.status).toBe("failed");
+    expect(queueAfter.find((q) => q.id === target.id)?.lastError).toContain("network");
+
+    const updated = await repo.listEntries();
+    expect(updated[0].syncStatus).toBe("failed");
+  });
 });

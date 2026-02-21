@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "vercel-pull-prod": "vercel pull --yes --environment=production",
-    "vercel-build": "vercel build --prod --yes",
+    "vercel-build": "pnpm --filter brain-dock-api db:migrate:neon && pnpm build",
     "vercel-build-with-env": "pnpm vercel-pull-prod && pnpm vercel-build"
   },
   "dependencies": {

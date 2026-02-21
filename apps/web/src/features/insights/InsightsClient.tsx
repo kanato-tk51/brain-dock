@@ -47,10 +47,15 @@ function withinRange(valueUtc: string, fromUtc?: string, toUtc?: string): boolea
 export function InsightsClient() {
   const repo = useMemo(() => getRepository(), []);
   const now = useMemo(() => new Date().toISOString(), []);
+  const oneMonthAgo = useMemo(() => {
+    const value = new Date();
+    value.setMonth(value.getMonth() - 1);
+    return value.toISOString();
+  }, []);
   const [openAiPeriod, setOpenAiPeriod] = useState<OpenAiPeriod>("day");
-  const [openAiFromLocal, setOpenAiFromLocal] = useState(() => toLocalInputValue(now));
+  const [openAiFromLocal, setOpenAiFromLocal] = useState(() => toLocalInputValue(oneMonthAgo));
   const [openAiToLocal, setOpenAiToLocal] = useState(() => toLocalInputValue(now));
-  const [historyFromLocal, setHistoryFromLocal] = useState("");
+  const [historyFromLocal, setHistoryFromLocal] = useState(() => toLocalInputValue(oneMonthAgo));
   const [historyToLocal, setHistoryToLocal] = useState(() => toLocalInputValue(now));
 
   const openAiSummaryQuery = useQuery({

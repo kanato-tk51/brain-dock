@@ -32,6 +32,10 @@ def claims_response_schema() -> dict[str, Any]:
                         "modality",
                         "polarity",
                         "certainty",
+                        "time_start_utc",
+                        "time_end_utc",
+                        "subject_entity_name",
+                        "object_entity_name",
                         "evidence_spans",
                     ],
                     "properties": {
@@ -51,7 +55,7 @@ def claims_response_schema() -> dict[str, Any]:
                             "items": {
                                 "type": "object",
                                 "additionalProperties": False,
-                                "required": ["excerpt"],
+                                "required": ["char_start", "char_end", "excerpt"],
                                 "properties": {
                                     "char_start": {"type": ["integer", "null"], "minimum": 0},
                                     "char_end": {"type": ["integer", "null"], "minimum": 0},
@@ -68,7 +72,7 @@ def claims_response_schema() -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["name", "entity_type"],
+                    "required": ["name", "entity_type", "aliases"],
                     "properties": {
                         "name": {"type": "string", "minLength": 1, "maxLength": 160},
                         "entity_type": {"type": "string", "enum": sorted(SUPPORTED_ENTITY_TYPES)},

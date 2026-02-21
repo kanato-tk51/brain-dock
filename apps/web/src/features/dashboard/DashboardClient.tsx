@@ -25,6 +25,9 @@ const labels: Record<EntryType, string> = {
 const analysisActionButtonClassName =
   "rounded-full border border-[#d8d2c7] bg-white px-2.5 py-1 text-xs font-medium text-ink hover:bg-[#f6f6f4]";
 
+const analyzedBadgeClassName =
+  "rounded-full border border-[#8ecf9c] bg-[#e8f7ec] px-2.5 py-1 text-xs font-medium text-[#1c6a2b]";
+
 export function DashboardClient() {
   const repo = useMemo(() => getRepository(), []);
   const { searchText, filters, setSearchText, toggleType, setDateRange, setTags, clearFilters } =
@@ -223,7 +226,10 @@ export function DashboardClient() {
                       {entry.tags.map((tag) => <Badge key={tag}>#{tag}</Badge>)}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    {entry.analysisStatus === "succeeded" ? (
+                      <span className={analyzedBadgeClassName}>解析済</span>
+                    ) : null}
                     <Button
                       variant="unstyled"
                       onClick={() => runAnalysis([entry.id])}

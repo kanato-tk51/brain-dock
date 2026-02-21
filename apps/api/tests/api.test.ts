@@ -156,13 +156,25 @@ describe("brain-dock-api", () => {
       url: "/analysis/run",
       payload: {
         entryIds: [entryId],
-        extractor: "rules",
         replaceExisting: true,
       },
     });
     expect(run.statusCode).toBe(200);
+    expect(run.json().jobId).toBeTruthy();
     expect(run.json().requested).toBe(1);
     expect(run.json().results[0].entryId).toBe(entryId);
+
+    const jobs = await app.inject({
+      method: "GET",
+      url: "/analysis/jobs?limit=10",
+    });
+    expect(jobs.statusCode).toBe(200);
+
+    const facts = await app.inject({
+      method: "GET",
+      url: `/facts/by-entry/${entryId}?limit=10`,
+    });
+    expect(facts.statusCode).toBe(200);
 
     const invalid = await app.inject({
       method: "POST",

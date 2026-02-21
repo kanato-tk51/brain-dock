@@ -1,11 +1,15 @@
 import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import {
+  type AnalysisJob,
+  type AnalysisJobQuery,
   createEntryInputSchema,
   type CreateEntryInput,
   draftSchema,
   entrySchema,
   type Entry,
   type EntryType,
+  type FactClaim,
+  type FactSearchQuery,
   type HistoryRecord,
   historySchema,
   listQuerySchema,
@@ -340,6 +344,22 @@ export class LocalRepository implements EntryRepository {
 
   async runAnalysisForEntries(_input: RunAnalysisInput): Promise<RunAnalysisResult> {
     throw new Error("解析実行はremoteモードで利用してください");
+  }
+
+  async listAnalysisJobs(_query?: AnalysisJobQuery): Promise<AnalysisJob[]> {
+    return [];
+  }
+
+  async getAnalysisJob(_jobId: string): Promise<AnalysisJob | null> {
+    return null;
+  }
+
+  async searchFacts(_query?: FactSearchQuery): Promise<FactClaim[]> {
+    return [];
+  }
+
+  async listFactsByEntry(_entryId: string, _limit?: number): Promise<FactClaim[]> {
+    return [];
   }
 
   async lockWithPin(pin: string): Promise<void> {

@@ -1,6 +1,10 @@
 import type {
+  AnalysisJob,
+  AnalysisJobQuery,
   CreateEntryInput,
   Entry,
+  FactClaim,
+  FactSearchQuery,
   HistoryRecord,
   ListQuery,
   OpenAiCostSummary,
@@ -174,17 +178,34 @@ export class MemoryStore implements DataStore {
 
   async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
     return {
+      jobId: newId(),
       requested: input.entryIds.length,
       succeeded: 0,
       failed: input.entryIds.length,
-      extractor: input.extractor,
       replaceExisting: input.replaceExisting,
       results: input.entryIds.map((entryId) => ({
         entryId,
         status: "error",
         message: "analysis is available only with postgres backend",
-        extractResults: [],
+        claimsInserted: 0,
+        attemptCount: 0,
       })),
     };
+  }
+
+  async listAnalysisJobs(_query?: AnalysisJobQuery): Promise<AnalysisJob[]> {
+    return [];
+  }
+
+  async getAnalysisJob(_jobId: string): Promise<AnalysisJob | null> {
+    return null;
+  }
+
+  async searchFacts(_query?: FactSearchQuery): Promise<FactClaim[]> {
+    return [];
+  }
+
+  async listFactsByEntry(_entryId: string, _limit?: number): Promise<FactClaim[]> {
+    return [];
   }
 }

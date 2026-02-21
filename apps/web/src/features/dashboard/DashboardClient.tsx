@@ -79,10 +79,9 @@ export function DashboardClient() {
     try {
       const result = await repo.runAnalysisForEntries({
         entryIds,
-        extractor: "rules",
         replaceExisting: true,
       });
-      summaryMessage = `解析完了: 成功 ${result.succeeded}件 / 失敗 ${result.failed}件`;
+      summaryMessage = `解析完了 (job: ${result.jobId}): 成功 ${result.succeeded}件 / 失敗 ${result.failed}件`;
 
       const queue = await repo.listSyncQueue();
       const pendingTargets = queue.filter((item) => item.status === "pending" && targetEntryIds.has(item.entryId));

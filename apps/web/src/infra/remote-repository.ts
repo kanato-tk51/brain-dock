@@ -1,8 +1,12 @@
 import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import type {
+  AnalysisJob,
+  AnalysisJobQuery,
   Draft,
   Entry,
   EntryType,
+  FactClaim,
+  FactSearchQuery,
   HistoryRecord,
   ListQuery,
   OpenAiCostSummary,
@@ -19,6 +23,10 @@ import {
   entrySchema,
   historySchema,
   listQuerySchema,
+  analysisJobQuerySchema,
+  analysisJobSchema,
+  factClaimSchema,
+  factSearchQuerySchema,
   openAiCostSummaryQuerySchema,
   openAiCostSummarySchema,
   openAiRequestQuerySchema,
@@ -197,6 +205,57 @@ export class RemoteRepository implements EntryRepository {
     const validated = runAnalysisInputSchema.parse(input);
     const raw = await this.request<unknown>("/analysis/run", "POST", validated);
     return runAnalysisResultSchema.parse(raw);
+  }
+
+  async listAnalysisJobs(query?: AnalysisJobQuery): Promise<AnalysisJob[]> {
+    const validated = query ? analysisJobQuerySchema.parse(query) : undefined;
+    const raw = await this.request<unknown[]>(
+      `/analysis/jobs${encodeQuery({
+        status: validated?.status,
+        limit: validated?.limit,
+      })}`,
+      "GET",
+    );
+    return raw.map((row) => analysisJobSchema.parse(row));
+  }
+
+  async getAnalysisJob(jobId: string): Promise<AnalysisJob | null> {
+    try {
+      const raw = await this.request<unknown>(`/analysis/jobs/${jobId}`, "GET");
+      return analysisJobSchema.parse(raw);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async searchFacts(query?: FactSearchQuery): Promise<FactClaim[]> {
+    const validated = query ? factSearchQuerySchema.parse(query) : undefined;
+    const raw = await this.request<unknown[]>(
+      `/facts/search${encodeQuery({
+        text: validated?.text,
+        type: validated?.type,
+        modality: validated?.modality,
+        predicate: validated?.predicate,
+        fromUtc: validated?.fromUtc,
+        toUtc: validated?.toUtc,
+        limit: validated?.limit,
+      })}`,
+      "GET",
+    );
+    return raw.map((row) => factClaimSchema.parse(row));
+  }
+
+  async listFactsByEntry(entryId: string, limit?: number): Promise<FactClaim[]> {
+    const raw = await this.request<unknown[]>(
+      `/facts/by-entry/${entryId}${encodeQuery({
+        limit,
+      })}`,
+      "GET",
+    );
+    return raw.map((row) => factClaimSchema.parse(row));
   }
 
   async lockWithPin(pin: string): Promise<void> {

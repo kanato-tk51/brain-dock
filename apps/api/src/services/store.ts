@@ -1,6 +1,10 @@
 import type {
+  AnalysisJob,
+  AnalysisJobQuery,
   CreateEntryInput,
   Entry,
+  FactClaim,
+  FactSearchQuery,
   HistoryRecord,
   ListQuery,
   OpenAiCostSummary,
@@ -26,5 +30,9 @@ export interface DataStore {
   listOpenAiRequests(query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]>;
   getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary>;
   runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult>;
+  listAnalysisJobs(query?: AnalysisJobQuery): Promise<AnalysisJob[]>;
+  getAnalysisJob(jobId: string): Promise<AnalysisJob | null>;
+  searchFacts(query?: FactSearchQuery): Promise<FactClaim[]>;
+  listFactsByEntry(entryId: string, limit?: number): Promise<FactClaim[]>;
   close?(): Promise<void>;
 }

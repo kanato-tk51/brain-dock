@@ -162,14 +162,14 @@ describe("remote repository", () => {
   it("runs manual analysis for selected entries", async () => {
     const repo = new RemoteRepository("http://localhost:8787");
     const payload = {
+      jobId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d999",
       requested: 2,
       succeeded: 2,
       failed: 0,
-      extractor: "rules",
       replaceExisting: true,
       results: [
-        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d001", status: "ok", extractResults: [] },
-        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d002", status: "ok", extractResults: [] },
+        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d001", status: "succeeded", claimsInserted: 3, attemptCount: 1 },
+        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d002", status: "succeeded", claimsInserted: 2, attemptCount: 1 },
       ],
     };
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status: 200 }));
@@ -179,10 +179,10 @@ describe("remote repository", () => {
         "018ecf2e-8f8a-7b94-a112-2f0a96d1d001",
         "018ecf2e-8f8a-7b94-a112-2f0a96d1d002",
       ],
-      extractor: "rules",
       replaceExisting: true,
     });
     expect(result.succeeded).toBe(2);
+    expect(result.jobId).toBe(payload.jobId);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8787/analysis/run",
       expect.objectContaining({

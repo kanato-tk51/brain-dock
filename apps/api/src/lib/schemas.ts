@@ -12,14 +12,22 @@ export const sensitivityLevels = ["public", "internal", "sensitive"] as const;
 export const syncStatuses = ["pending", "syncing", "synced", "failed"] as const;
 export const openAiPeriods = ["day", "week", "month"] as const;
 export const openAiRequestStatuses = ["ok", "error", "timeout", "canceled"] as const;
-export const analysisExtractors = ["rules", "llm"] as const;
+export const analysisJobStatuses = ["queued", "running", "succeeded", "failed"] as const;
+export const analysisJobItemStatuses = ["queued", "running", "succeeded", "failed", "blocked"] as const;
+export const factModalities = ["fact", "plan", "hypothesis", "request", "feeling"] as const;
+export const factPolarities = ["affirm", "negate"] as const;
+export const factClaimStatuses = ["active", "retracted", "superseded"] as const;
 
 export const entryTypeSchema = z.enum(entryTypes);
 export const sensitivitySchema = z.enum(sensitivityLevels);
 export const syncStatusSchema = z.enum(syncStatuses);
 export const openAiPeriodSchema = z.enum(openAiPeriods);
 export const openAiRequestStatusSchema = z.enum(openAiRequestStatuses);
-export const analysisExtractorSchema = z.enum(analysisExtractors);
+export const analysisJobStatusSchema = z.enum(analysisJobStatuses);
+export const analysisJobItemStatusSchema = z.enum(analysisJobItemStatuses);
+export const factModalitySchema = z.enum(factModalities);
+export const factPolaritySchema = z.enum(factPolarities);
+export const factClaimStatusSchema = z.enum(factClaimStatuses);
 
 const baseEntrySchema = z.object({
   id: z.string().uuid(),
@@ -33,6 +41,7 @@ const baseEntrySchema = z.object({
   updatedAtUtc: z.string().datetime({ offset: true }),
   syncStatus: syncStatusSchema.default("pending"),
   remoteId: z.string().optional(),
+  analysisStatus: analysisJobItemStatusSchema.optional(),
 });
 
 export const journalPayloadSchema = z.object({
@@ -215,28 +224,103 @@ export const openAiCostSummarySchema = z.object({
 
 export const runAnalysisInputSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1).max(200),
-  extractor: analysisExtractorSchema.default("rules"),
   replaceExisting: z.boolean().default(true),
 });
 
 export const analysisEntryResultSchema = z.object({
   entryId: z.string().uuid(),
-  captureId: z.string().optional(),
-  noteId: z.string().optional(),
-  taskId: z.string().optional(),
-  status: z.enum(["ok", "skipped", "error"]),
+  documentId: z.string().optional(),
+  jobItemId: z.string().optional(),
+  status: analysisJobItemStatusSchema.or(z.literal("error")),
   message: z.string().optional(),
-  processResult: z.record(z.string(), z.unknown()).optional(),
-  extractResults: z.array(z.record(z.string(), z.unknown())).default([]),
+  claimsInserted: z.number().int().min(0).default(0),
+  attemptCount: z.number().int().min(0).default(0),
+  nextRetryAtUtc: z.string().datetime({ offset: true }).optional(),
 });
 
 export const runAnalysisResultSchema = z.object({
+  jobId: z.string().uuid(),
   requested: z.number().int().min(0),
   succeeded: z.number().int().min(0),
   failed: z.number().int().min(0),
-  extractor: analysisExtractorSchema,
   replaceExisting: z.boolean(),
   results: z.array(analysisEntryResultSchema),
+});
+
+export const analysisJobItemSchema = z.object({
+  id: z.string().uuid(),
+  jobId: z.string().uuid(),
+  entryId: z.string().uuid(),
+  documentId: z.string().optional(),
+  status: analysisJobItemStatusSchema,
+  attemptCount: z.number().int().min(0),
+  nextRetryAtUtc: z.string().datetime({ offset: true }).optional(),
+  lastError: z.string().optional(),
+  claimsInserted: z.number().int().min(0),
+  createdAtUtc: z.string().datetime({ offset: true }),
+  updatedAtUtc: z.string().datetime({ offset: true }),
+});
+
+export const analysisJobSchema = z.object({
+  id: z.string().uuid(),
+  triggerMode: z.enum(["manual", "retry", "system"]),
+  status: analysisJobStatusSchema,
+  requestedBy: z.string(),
+  extractorVersion: z.string(),
+  requestedAtUtc: z.string().datetime({ offset: true }),
+  startedAtUtc: z.string().datetime({ offset: true }).optional(),
+  finishedAtUtc: z.string().datetime({ offset: true }).optional(),
+  totalItems: z.number().int().min(0),
+  succeededItems: z.number().int().min(0),
+  failedItems: z.number().int().min(0),
+  errorSummary: z.string().optional(),
+  items: z.array(analysisJobItemSchema).default([]),
+});
+
+export const analysisJobQuerySchema = z.object({
+  status: analysisJobStatusSchema.optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+});
+
+export const factEvidenceSpanSchema = z.object({
+  id: z.string(),
+  claimId: z.string(),
+  documentId: z.string(),
+  charStart: z.number().int().min(0).optional(),
+  charEnd: z.number().int().min(0).optional(),
+  excerpt: z.string(),
+  createdAtUtc: z.string().datetime({ offset: true }),
+});
+
+export const factClaimSchema = z.object({
+  id: z.string(),
+  documentId: z.string(),
+  entryId: z.string().uuid(),
+  subjectText: z.string(),
+  subjectEntityId: z.string().optional(),
+  predicate: z.string(),
+  objectText: z.string(),
+  objectEntityId: z.string().optional(),
+  modality: factModalitySchema,
+  polarity: factPolaritySchema,
+  certainty: z.number().min(0).max(1),
+  timeStartUtc: z.string().datetime({ offset: true }).optional(),
+  timeEndUtc: z.string().datetime({ offset: true }).optional(),
+  status: factClaimStatusSchema,
+  extractorVersion: z.string(),
+  createdAtUtc: z.string().datetime({ offset: true }),
+  updatedAtUtc: z.string().datetime({ offset: true }),
+  evidenceSpans: z.array(factEvidenceSpanSchema).default([]),
+});
+
+export const factSearchQuerySchema = z.object({
+  text: z.string().trim().min(1).optional(),
+  type: entryTypeSchema.optional(),
+  modality: factModalitySchema.optional(),
+  predicate: z.string().trim().min(1).max(80).optional(),
+  fromUtc: z.string().datetime({ offset: true }).optional(),
+  toUtc: z.string().datetime({ offset: true }).optional(),
+  limit: z.number().int().min(1).max(500).optional(),
 });
 
 export type EntryType = z.infer<typeof entryTypeSchema>;
@@ -256,6 +340,16 @@ export type OpenAiCostSummary = z.infer<typeof openAiCostSummarySchema>;
 export type RunAnalysisInput = z.infer<typeof runAnalysisInputSchema>;
 export type AnalysisEntryResult = z.infer<typeof analysisEntryResultSchema>;
 export type RunAnalysisResult = z.infer<typeof runAnalysisResultSchema>;
+export type AnalysisJobStatus = z.infer<typeof analysisJobStatusSchema>;
+export type AnalysisJobItemStatus = z.infer<typeof analysisJobItemStatusSchema>;
+export type AnalysisJob = z.infer<typeof analysisJobSchema>;
+export type AnalysisJobItem = z.infer<typeof analysisJobItemSchema>;
+export type AnalysisJobQuery = z.infer<typeof analysisJobQuerySchema>;
+export type FactModality = z.infer<typeof factModalitySchema>;
+export type FactPolarity = z.infer<typeof factPolaritySchema>;
+export type FactClaim = z.infer<typeof factClaimSchema>;
+export type FactEvidenceSpan = z.infer<typeof factEvidenceSpanSchema>;
+export type FactSearchQuery = z.infer<typeof factSearchQuerySchema>;
 
 export function validatePayload(type: EntryType, payload: unknown) {
   return payloadByTypeSchema[type].parse(payload);

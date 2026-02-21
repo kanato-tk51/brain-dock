@@ -1,7 +1,11 @@
 import type {
+  AnalysisJob,
+  AnalysisJobQuery,
   Draft,
   Entry,
   EntryType,
+  FactClaim,
+  FactSearchQuery,
   HistoryRecord,
   ListQuery,
   OpenAiCostSummary,
@@ -34,6 +38,10 @@ export interface EntryRepository {
   listOpenAiRequests(query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]>;
   getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary>;
   runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult>;
+  listAnalysisJobs(query?: AnalysisJobQuery): Promise<AnalysisJob[]>;
+  getAnalysisJob(jobId: string): Promise<AnalysisJob | null>;
+  searchFacts(query?: FactSearchQuery): Promise<FactClaim[]>;
+  listFactsByEntry(entryId: string, limit?: number): Promise<FactClaim[]>;
   lockWithPin(pin: string): Promise<void>;
   unlockWithPin(pin: string): Promise<boolean>;
   hasPin(): Promise<boolean>;

@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { EntryType, HistoryRecord, OpenAiPeriod } from "@/domain/schemas";
+import type { OpenAiPeriod } from "@/domain/schemas";
 import { getRepository } from "@/infra/repository-singleton";
 import { formatLocal, toLocalInputValue, toUtcIso } from "@/shared/utils/time";
 
@@ -15,91 +15,16 @@ const openAiPeriodLabels: Record<OpenAiPeriod, string> = {
   month: "月",
 };
 
-const typeLabels: Record<EntryType, string> = {
-  journal: "日記",
-  todo: "TODO",
-  learning: "学び",
-  thought: "思考",
-  meeting: "会議",
-};
-
-const sourceLabels: Record<"local" | "remote", string> = {
-  local: "ローカル",
-  remote: "リモート",
-};
-
-const syncStatusLabels: Record<"pending" | "syncing" | "synced" | "failed", string> = {
-  pending: "未同期",
-  syncing: "同期中",
-  synced: "同期済み",
-  failed: "同期失敗",
-};
+const analysisStatusLabels = {
+  queued: "再試行待ち",
+  running: "実行中",
+  succeeded: "成功",
+  failed: "失敗",
+  blocked: "機密ブロック",
+} as const;
 
 function formatUsd(value: number): string {
   return `$${value.toFixed(6)}`;
-}
-
-type HistorySummary = {
-  id: string;
-  createdAtUtc: string;
-  sourceLabel: string;
-  typeLabel: string;
-  preview: string;
-  fromStatusLabel: string;
-  toStatusLabel: string;
-};
-
-function parseJson(value: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function pickPreview(snapshot: Record<string, unknown> | null): string {
-  if (!snapshot) {
-    return "-";
-  }
-  if (typeof snapshot.body === "string" && snapshot.body.trim()) {
-    return snapshot.body.trim();
-  }
-  const payload = snapshot.payload;
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const payloadObject = payload as Record<string, unknown>;
-    const keys = ["details", "takeaway", "note", "reflection", "context", "notes"];
-    for (const key of keys) {
-      const value = payloadObject[key];
-      if (typeof value === "string" && value.trim()) {
-        return value.trim();
-      }
-    }
-  }
-  return "-";
-}
-
-function summarizeHistory(row: HistoryRecord): HistorySummary {
-  const before = parseJson(row.beforeJson);
-  const after = parseJson(row.afterJson);
-  const declaredTypeRaw = (after?.declaredType ?? before?.declaredType) as EntryType | undefined;
-  const typeLabel = declaredTypeRaw && declaredTypeRaw in typeLabels ? typeLabels[declaredTypeRaw] : "不明";
-  const afterPreview = pickPreview(after);
-  const preview = afterPreview !== "-" ? afterPreview : pickPreview(before);
-  const fromStatus = typeof before?.syncStatus === "string" ? before.syncStatus : "-";
-  const toStatus = typeof after?.syncStatus === "string" ? after.syncStatus : "-";
-  return {
-    id: row.id,
-    createdAtUtc: row.createdAtUtc,
-    sourceLabel: sourceLabels[row.source],
-    typeLabel,
-    preview,
-    fromStatusLabel: fromStatus in syncStatusLabels ? syncStatusLabels[fromStatus as keyof typeof syncStatusLabels] : fromStatus,
-    toStatusLabel: toStatus in syncStatusLabels ? syncStatusLabels[toStatus as keyof typeof syncStatusLabels] : toStatus,
-  };
 }
 
 function withinRange(valueUtc: string, fromUtc?: string, toUtc?: string): boolean {
@@ -149,18 +74,16 @@ export function InsightsClient() {
       }),
   });
 
-  const historyQuery = useQuery({
-    queryKey: ["analysis-history"],
-    queryFn: () => repo.listHistory(),
+  const analysisJobsQuery = useQuery({
+    queryKey: ["analysis-jobs"],
+    queryFn: () => repo.listAnalysisJobs({ limit: 80 }),
   });
 
-  const historyRows = useMemo(() => {
+  const analysisRows = useMemo(() => {
     const fromUtc = historyFromLocal ? toUtcIso(historyFromLocal) : undefined;
     const toUtc = historyToLocal ? toUtcIso(historyToLocal) : undefined;
-    return (historyQuery.data ?? [])
-      .filter((row) => withinRange(row.createdAtUtc, fromUtc, toUtc))
-      .map(summarizeHistory);
-  }, [historyFromLocal, historyQuery.data, historyToLocal]);
+    return (analysisJobsQuery.data ?? []).filter((job) => withinRange(job.requestedAtUtc, fromUtc, toUtc));
+  }, [analysisJobsQuery.data, historyFromLocal, historyToLocal]);
 
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-6 lg:grid-cols-2">
@@ -273,7 +196,7 @@ export function InsightsClient() {
         <div className="rounded-2xl border border-white/40 bg-white/55 p-5">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-bold">解析履歴</h2>
-            <Button variant="ghost" onClick={() => historyQuery.refetch()}>再読み込み</Button>
+            <Button variant="ghost" onClick={() => analysisJobsQuery.refetch()}>再読み込み</Button>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-2">
             <input
@@ -291,18 +214,20 @@ export function InsightsClient() {
           </div>
 
           <div className="mt-3 space-y-2">
-            {historyRows.map((row) => (
-              <div key={row.id} className="rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-2 text-xs">
+            {analysisRows.map((job) => (
+              <div key={job.id} className="rounded-lg border border-[#d8d2c7] bg-white/70 px-2 py-2 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{row.sourceLabel}</Badge>
-                  <Badge>{row.typeLabel}</Badge>
-                  <span className="text-ink/70">{row.fromStatusLabel} → {row.toStatusLabel}</span>
+                  <Badge>{analysisStatusLabels[job.status]}</Badge>
+                  <Badge>{job.extractorVersion}</Badge>
+                  <span className="text-ink/70">
+                    成功 {job.succeededItems} / 失敗 {job.failedItems} / 全体 {job.totalItems}
+                  </span>
                 </div>
-                <p className="mt-1 text-ink/70">{formatLocal(row.createdAtUtc)}</p>
-                <p className="mt-1 line-clamp-2 text-ink/85">{row.preview}</p>
+                <p className="mt-1 text-ink/70">{formatLocal(job.requestedAtUtc)}</p>
+                <p className="mt-1 line-clamp-2 text-ink/85">job: {job.id}</p>
               </div>
             ))}
-            {historyRows.length === 0 ? <p className="text-xs text-ink/65">解析履歴データがありません。</p> : null}
+            {analysisRows.length === 0 ? <p className="text-xs text-ink/65">解析履歴データがありません。</p> : null}
           </div>
         </div>
       </section>

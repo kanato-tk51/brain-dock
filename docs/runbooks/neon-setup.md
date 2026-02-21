@@ -32,7 +32,14 @@ python3 apps/cli/capture.py \
   "今日の学びメモ"
 ```
 
-## 4. 動作確認SQL
+## 4. Worker実行テスト
+
+```bash
+python3 apps/worker/process_captures.py --backend neon --limit 200
+python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing
+```
+
+## 5. 動作確認SQL
 
 ```sql
 select id, kind, detail, created_at
@@ -47,7 +54,5 @@ limit 20;
 ```
 
 ## 注意
-- `capture` CLI で Neon 接続するには `psycopg` が必要。
+- Neon 接続する CLI/worker には `psycopg` が必要。
   - `pip install 'psycopg[binary]'`
-- 現時点で Neon 対応しているのは `capture` 入力のみ。
-- worker (`process_captures` / `extract_key_facts`) は SQLite 前提の実装。

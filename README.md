@@ -35,13 +35,18 @@
   `neon/migrations/20260221130000_initial_schema.sql`
 - `captures_raw -> notes/tasks` 変換:
   `python3 apps/worker/process_captures.py --db ./brain_dock.db`
+- `captures_raw -> notes/tasks` 変換（Neon/PostgreSQL）:
+  `NEON_DATABASE_URL=postgresql://... python3 apps/worker/process_captures.py --backend neon`
 - `notes/tasks -> key_facts` 抽出（ルール）:
   `python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing`
+- `notes/tasks -> key_facts` 抽出（ルール / Neon/PostgreSQL）:
+  `NEON_DATABASE_URL=postgresql://... python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing`
 - `notes/tasks -> key_facts` 抽出（LLM structured output）:
   `OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing --extractor llm`
+- `notes/tasks -> key_facts` 抽出（LLM structured output / Neon/PostgreSQL）:
+  `NEON_DATABASE_URL=postgresql://... OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --backend neon --source all --replace-existing --extractor llm`
 
-※ 現時点で Neon 対応しているのは `capture` 入力です。worker (`process_captures` / `extract_key_facts`) は SQLite 実行を前提にしています。
-セットアップ手順: `docs/runbooks/neon-setup.md`
+Neonセットアップ手順: `docs/runbooks/neon-setup.md`
 
 ## リポジトリ構成
 - `apps/`: 実アプリ（CLI / API / UI）

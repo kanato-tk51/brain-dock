@@ -4,6 +4,7 @@ Process raw captures into structured notes/tasks.
 
 Usage:
   python3 apps/worker/process_captures.py --db /path/to/brain_dock.db
+  NEON_DATABASE_URL=postgresql://... python3 apps/worker/process_captures.py --backend neon
 """
 
 from __future__ import annotations
@@ -11,10 +12,19 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sqlite3
 import uuid
-from typing import Literal
+from typing import Any, Literal, Mapping
 
+from db_runtime import (
+    DEFAULT_NEON_CONNECT_TIMEOUT_S,
+    DEFAULT_NEON_DSN_ENV,
+    exec_write,
+    fetch_all,
+    fetch_one,
+    now_expr,
+    open_connection,
+    to_text_datetime,
+)
 from json_contract import validate_contract, worker_schema_path
 
 
@@ -46,6 +56,8 @@ LEADING_TASK_PREFIX_RE = re.compile(
     r"^\s*(?:\[[ xX]\]|\(\s\)|todo[:：]?\s*|task[:：]?\s*|やること[:：]?\s*)",
     re.IGNORECASE,
 )
+
+RowLike = Mapping[str, Any]
 
 
 def _new_id() -> str:
@@ -133,48 +145,47 @@ def task_title(text: str) -> str:
     return clamp(line, MAX_TITLE_LEN)
 
 
-def fetch_captures(conn: sqlite3.Connection, capture_id: str | None, limit: int) -> list[sqlite3.Row]:
+def fetch_captures(conn: Any, capture_id: str | None, limit: int) -> list[RowLike]:
     if capture_id:
-        return list(
-            conn.execute(
-                """
-                SELECT *
-                FROM captures_raw
-                WHERE id = :capture_id
-                """,
-                {"capture_id": capture_id},
-            )
-        )
-
-    return list(
-        conn.execute(
+        return fetch_all(
+            conn,
             """
             SELECT *
             FROM captures_raw
-            WHERE status = 'new'
-            ORDER BY created_at ASC
-            LIMIT :limit
+            WHERE id = %s
             """,
-            {"limit": limit},
+            (capture_id,),
         )
+
+    return fetch_all(
+        conn,
+        """
+        SELECT *
+        FROM captures_raw
+        WHERE status = 'new'
+        ORDER BY created_at ASC
+        LIMIT %s
+        """,
+        (limit,),
     )
 
 
 def write_task(
-    conn: sqlite3.Connection,
-    capture: sqlite3.Row,
+    conn: Any,
+    capture: RowLike,
     *,
     dry_run: bool,
 ) -> str:
-    existing = conn.execute(
+    existing = fetch_one(
+        conn,
         """
         SELECT id
         FROM tasks
-        WHERE source_capture_id = ? AND deleted_at IS NULL
+        WHERE source_capture_id = %s AND deleted_at IS NULL
         LIMIT 1
         """,
         (capture["id"],),
-    ).fetchone()
+    )
     if existing:
         return str(existing["id"])
 
@@ -183,11 +194,13 @@ def write_task(
     if dry_run:
         return task_id
 
-    conn.execute(
-        """
+    now = now_expr(conn)
+    exec_write(
+        conn,
+        f"""
         INSERT INTO tasks (
           id, source_capture_id, title, details, status, priority, source, sensitivity, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'todo', ?, 'extracted', ?, datetime('now'), datetime('now'))
+        ) VALUES (%s, %s, %s, %s, 'todo', %s, 'extracted', %s, {now}, {now})
         """,
         (
             task_id,
@@ -202,27 +215,28 @@ def write_task(
 
 
 def write_note(
-    conn: sqlite3.Connection,
-    capture: sqlite3.Row,
+    conn: Any,
+    capture: RowLike,
     *,
     dry_run: bool,
 ) -> str:
-    existing = conn.execute(
+    existing = fetch_one(
+        conn,
         """
         SELECT id
         FROM notes
-        WHERE source_capture_id = ? AND deleted_at IS NULL
+        WHERE source_capture_id = %s AND deleted_at IS NULL
         LIMIT 1
         """,
         (capture["id"],),
-    ).fetchone()
+    )
     if existing:
         return str(existing["id"])
 
     note_id = _new_id()
     raw_text = capture["raw_text"] or ""
     input_type = capture["input_type"] or "note"
-    occurred_at = capture["occurred_at"] or capture["created_at"]
+    occurred_at = to_text_datetime(capture["occurred_at"] or capture["created_at"])
     ntype = detect_note_type(input_type, raw_text)
     source_url = extract_url(raw_text)
     summary = clamp(raw_text, 160)
@@ -235,13 +249,15 @@ def write_note(
     if dry_run:
         return note_id
 
-    conn.execute(
-        """
+    now = now_expr(conn)
+    exec_write(
+        conn,
+        f"""
         INSERT INTO notes (
           id, source_capture_id, note_type, title, summary, body, occurred_at, journal_date,
           mood_score, energy_score, source_url, source_id, sensitivity, review_status,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', {now}, {now})
         """,
         (
             note_id,
@@ -263,7 +279,7 @@ def write_note(
 
 
 def mark_capture_processed(
-    conn: sqlite3.Connection,
+    conn: Any,
     capture_id: str,
     *,
     parsed_note_id: str | None = None,
@@ -272,38 +288,42 @@ def mark_capture_processed(
 ) -> None:
     if dry_run:
         return
-    conn.execute(
-        """
+    now = now_expr(conn)
+    exec_write(
+        conn,
+        f"""
         UPDATE captures_raw
         SET status = 'processed',
-            parsed_note_id = ?,
-            parsed_task_id = ?,
-            updated_at = datetime('now')
-        WHERE id = ?
+            parsed_note_id = %s,
+            parsed_task_id = %s,
+            updated_at = {now}
+        WHERE id = %s
         """,
         (parsed_note_id, parsed_task_id, capture_id),
     )
 
 
 def mark_capture_blocked(
-    conn: sqlite3.Connection,
+    conn: Any,
     capture_id: str,
     *,
     dry_run: bool,
 ) -> None:
     if dry_run:
         return
-    conn.execute(
-        """
+    now = now_expr(conn)
+    exec_write(
+        conn,
+        f"""
         UPDATE captures_raw
-        SET status = 'blocked', updated_at = datetime('now')
-        WHERE id = ?
+        SET status = 'blocked', updated_at = {now}
+        WHERE id = %s
         """,
         (capture_id,),
     )
 
 
-def process_one(conn: sqlite3.Connection, capture: sqlite3.Row, dry_run: bool) -> tuple[str, str]:
+def process_one(conn: Any, capture: RowLike, dry_run: bool) -> tuple[str, str]:
     capture_id = capture["id"]
     status = capture["status"]
     pii_score = float(capture["pii_score"] or 0)
@@ -327,8 +347,13 @@ def process_one(conn: sqlite3.Connection, capture: sqlite3.Row, dry_run: bool) -
 
 
 def run(args: argparse.Namespace) -> int:
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = open_connection(
+        backend=args.backend,
+        db=args.db,
+        neon_dsn=args.neon_dsn,
+        neon_dsn_env=args.neon_dsn_env,
+        neon_connect_timeout=args.neon_connect_timeout,
+    )
 
     created_notes = 0
     created_tasks = 0
@@ -376,7 +401,25 @@ def run(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Process captures_raw into notes/tasks.")
-    parser.add_argument("--db", required=True, help="SQLite database path")
+    parser.add_argument(
+        "--backend",
+        choices=["sqlite", "neon"],
+        default="sqlite",
+        help="Storage backend",
+    )
+    parser.add_argument("--db", help="SQLite database path (for --backend sqlite)")
+    parser.add_argument("--neon-dsn", help="Neon PostgreSQL DSN (for --backend neon)")
+    parser.add_argument(
+        "--neon-dsn-env",
+        default=DEFAULT_NEON_DSN_ENV,
+        help="Environment variable name for Neon DSN",
+    )
+    parser.add_argument(
+        "--neon-connect-timeout",
+        type=int,
+        default=DEFAULT_NEON_CONNECT_TIMEOUT_S,
+        help="Neon connection timeout seconds",
+    )
     parser.add_argument("--capture-id", help="Process one capture by ID")
     parser.add_argument("--limit", type=int, default=200, help="Max new captures to process")
     parser.add_argument("--dry-run", action="store_true", help="Do not write DB")
@@ -384,7 +427,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.backend == "sqlite" and not args.db:
+        parser.error("--db is required when --backend sqlite")
     return run(args)
 
 

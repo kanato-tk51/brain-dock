@@ -4,6 +4,7 @@ Extract structured key_facts from notes/tasks.
 
 Usage:
   python3 apps/worker/extract_key_facts.py --db /path/to/brain_dock.db
+  NEON_DATABASE_URL=postgresql://... python3 apps/worker/extract_key_facts.py --backend neon --source all
 """
 
 from __future__ import annotations
@@ -12,14 +13,23 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Mapping
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from db_runtime import (
+    DEFAULT_NEON_CONNECT_TIMEOUT_S,
+    DEFAULT_NEON_DSN_ENV,
+    epoch_expr,
+    exec_write,
+    fetch_all,
+    is_sqlite_conn,
+    open_connection,
+    now_expr,
+)
 from json_contract import validate_contract, worker_schema_path
 
 
@@ -45,6 +55,8 @@ PREDICATE_HINTS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 BULLET_RE = re.compile(r"^\s*(?:[-*・]|[0-9]+[.)])\s+")
+
+RowLike = Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -114,7 +126,7 @@ def make_meta_fact(
     )
 
 
-def extract_from_note_rules(row: sqlite3.Row, max_facts: int) -> list[Fact]:
+def extract_from_note_rules(row: RowLike, max_facts: int) -> list[Fact]:
     note_id = row["id"]
     note_type = row["note_type"]
     occurred_at = row["occurred_at"]
@@ -205,7 +217,7 @@ def extract_from_note_rules(row: sqlite3.Row, max_facts: int) -> list[Fact]:
     return dedupe_facts(facts, max_facts=max_facts)
 
 
-def extract_from_task_rules(row: sqlite3.Row, max_facts: int) -> list[Fact]:
+def extract_from_task_rules(row: RowLike, max_facts: int) -> list[Fact]:
     task_id = row["id"]
     title = row["title"] or ""
     details = row["details"] or ""
@@ -332,19 +344,19 @@ def validate_fact_schema(fact: Fact) -> tuple[bool, str | None]:
 
 
 def fetch_notes(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     note_id: str | None,
     limit: int,
     only_changed: bool,
-) -> list[sqlite3.Row]:
+) -> list[RowLike]:
     if note_id:
         query = """
         SELECT *
         FROM notes
-        WHERE id = :note_id AND deleted_at IS NULL
+        WHERE id = %s AND deleted_at IS NULL
         """
-        return list(conn.execute(query, {"note_id": note_id}))
+        return fetch_all(conn, query, (note_id,))
 
     if not only_changed:
         query = """
@@ -352,10 +364,11 @@ def fetch_notes(
         FROM notes
         WHERE deleted_at IS NULL
         ORDER BY updated_at DESC
-        LIMIT :limit
+        LIMIT %s
         """
-        return list(conn.execute(query, {"limit": limit}))
+        return fetch_all(conn, query, (limit,))
 
+    epoch = epoch_expr(conn)
     query = """
     SELECT n.*
     FROM notes n
@@ -367,29 +380,29 @@ def fetch_notes(
         )
         OR n.updated_at > COALESCE(
           (SELECT MAX(k.updated_at) FROM key_facts k WHERE k.note_id = n.id),
-          '1970-01-01'
+          {epoch}
         )
       )
     ORDER BY n.updated_at DESC
-    LIMIT :limit
+    LIMIT %s
     """
-    return list(conn.execute(query, {"limit": limit}))
+    return fetch_all(conn, query.format(epoch=epoch), (limit,))
 
 
 def fetch_tasks(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     task_id: str | None,
     limit: int,
     only_changed: bool,
-) -> list[sqlite3.Row]:
+) -> list[RowLike]:
     if task_id:
         query = """
         SELECT *
         FROM tasks
-        WHERE id = :task_id AND deleted_at IS NULL
+        WHERE id = %s AND deleted_at IS NULL
         """
-        return list(conn.execute(query, {"task_id": task_id}))
+        return fetch_all(conn, query, (task_id,))
 
     if not only_changed:
         query = """
@@ -397,10 +410,11 @@ def fetch_tasks(
         FROM tasks
         WHERE deleted_at IS NULL
         ORDER BY updated_at DESC
-        LIMIT :limit
+        LIMIT %s
         """
-        return list(conn.execute(query, {"limit": limit}))
+        return fetch_all(conn, query, (limit,))
 
+    epoch = epoch_expr(conn)
     query = """
     SELECT t.*
     FROM tasks t
@@ -412,17 +426,17 @@ def fetch_tasks(
         )
         OR t.updated_at > COALESCE(
           (SELECT MAX(k.updated_at) FROM key_facts k WHERE k.task_id = t.id),
-          '1970-01-01'
+          {epoch}
         )
       )
     ORDER BY t.updated_at DESC
-    LIMIT :limit
+    LIMIT %s
     """
-    return list(conn.execute(query, {"limit": limit}))
+    return fetch_all(conn, query.format(epoch=epoch), (limit,))
 
 
 def soft_delete_existing_facts(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     note_id: str | None = None,
     task_id: str | None = None,
@@ -430,30 +444,31 @@ def soft_delete_existing_facts(
     if bool(note_id) == bool(task_id):
         raise ValueError("exactly one of note_id or task_id must be set")
 
+    now = now_expr(conn)
     if note_id:
-        res = conn.execute(
-            """
+        return exec_write(
+            conn,
+            f"""
             UPDATE key_facts
-            SET deleted_at = datetime('now'), updated_at = datetime('now')
-            WHERE note_id = ? AND deleted_at IS NULL
+            SET deleted_at = {now}, updated_at = {now}
+            WHERE note_id = %s AND deleted_at IS NULL
             """,
             (note_id,),
         )
-        return res.rowcount
 
-    res = conn.execute(
-        """
+    return exec_write(
+        conn,
+        f"""
         UPDATE key_facts
-        SET deleted_at = datetime('now'), updated_at = datetime('now')
-        WHERE task_id = ? AND deleted_at IS NULL
+        SET deleted_at = {now}, updated_at = {now}
+        WHERE task_id = %s AND deleted_at IS NULL
         """,
         (task_id,),
     )
-    return res.rowcount
 
 
 def insert_facts(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     note_id: str | None = None,
     task_id: str | None = None,
@@ -478,15 +493,22 @@ def insert_facts(
             inserted += 1
             continue
 
-        cursor = conn.execute(
-            """
-            INSERT OR IGNORE INTO key_facts (
+        insert_sql = """
+            INSERT INTO key_facts (
               id, note_id, task_id,
               subject, predicate, object_text, object_type,
               object_json, evidence_excerpt, occurred_at,
               confidence, sensitivity, extractor_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        if is_sqlite_conn(conn):
+            insert_sql = insert_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+        else:
+            insert_sql += " ON CONFLICT DO NOTHING"
+
+        rowcount = exec_write(
+            conn,
+            insert_sql,
             (
                 _new_id(),
                 note_id,
@@ -503,7 +525,7 @@ def insert_facts(
                 extractor_version,
             ),
         )
-        if cursor.rowcount == 1:
+        if rowcount == 1:
             inserted += 1
         else:
             skipped += 1
@@ -534,7 +556,7 @@ def load_schema(path: Path) -> dict[str, Any]:
     return data
 
 
-def note_prompt_payload(row: sqlite3.Row, max_chars: int) -> dict[str, Any]:
+def note_prompt_payload(row: RowLike, max_chars: int) -> dict[str, Any]:
     return {
         "item_type": "note",
         "id": row["id"],
@@ -550,7 +572,7 @@ def note_prompt_payload(row: sqlite3.Row, max_chars: int) -> dict[str, Any]:
     }
 
 
-def task_prompt_payload(row: sqlite3.Row, max_chars: int) -> dict[str, Any]:
+def task_prompt_payload(row: RowLike, max_chars: int) -> dict[str, Any]:
     return {
         "item_type": "task",
         "id": row["id"],
@@ -712,7 +734,7 @@ def extract_with_llm(
 
 
 def extract_facts_for_note(
-    row: sqlite3.Row,
+    row: RowLike,
     *,
     extractor: Literal["rules", "llm"],
     args: argparse.Namespace,
@@ -738,7 +760,7 @@ def extract_facts_for_note(
 
 
 def extract_facts_for_task(
-    row: sqlite3.Row,
+    row: RowLike,
     *,
     extractor: Literal["rules", "llm"],
     args: argparse.Namespace,
@@ -773,8 +795,13 @@ def run(args: argparse.Namespace) -> int:
         EXTRACTOR_VERSION_RULES if extractor == "rules" else f"llm-{args.llm_model}"
     )
 
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = open_connection(
+        backend=args.backend,
+        db=args.db,
+        neon_dsn=args.neon_dsn,
+        neon_dsn_env=args.neon_dsn_env,
+        neon_connect_timeout=args.neon_connect_timeout,
+    )
 
     total_items = 0
     total_inserted = 0
@@ -874,7 +901,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract key_facts from notes/tasks into key_facts table."
     )
-    parser.add_argument("--db", required=True, help="SQLite database path")
+    parser.add_argument(
+        "--backend",
+        choices=["sqlite", "neon"],
+        default="sqlite",
+        help="Storage backend",
+    )
+    parser.add_argument("--db", help="SQLite database path (for --backend sqlite)")
+    parser.add_argument("--neon-dsn", help="Neon PostgreSQL DSN (for --backend neon)")
+    parser.add_argument(
+        "--neon-dsn-env",
+        default=DEFAULT_NEON_DSN_ENV,
+        help="Environment variable name for Neon DSN",
+    )
+    parser.add_argument(
+        "--neon-connect-timeout",
+        type=int,
+        default=DEFAULT_NEON_CONNECT_TIMEOUT_S,
+        help="Neon connection timeout seconds",
+    )
     parser.add_argument(
         "--source",
         choices=["all", "notes", "tasks"],
@@ -955,7 +1000,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.backend == "sqlite" and not args.db:
+        parser.error("--db is required when --backend sqlite")
     if args.note_id and args.source not in {"all", "notes"}:
         raise SystemExit("--note-id can be used only with --source all|notes")
     if args.task_id and args.source not in {"all", "tasks"}:

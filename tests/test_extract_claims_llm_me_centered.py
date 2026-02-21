@@ -94,6 +94,51 @@ class MeCentricClaimNormalizationTest(unittest.TestCase):
             self.assertLess(link.from_claim_index, len(out.claims))
             self.assertLess(link.to_claim_index, len(out.claims))
 
+    def test_context_completion_for_fragmented_state_change(self) -> None:
+        parsed = ParsedClaimsOutput(
+            claims=[
+                _claim("me", "experienced", "喉の調子が悪くなり"),
+                _claim("me", "experienced", "土曜日はさらに悪化した"),
+            ],
+            entities=[],
+            links=[],
+        )
+        out = normalize_to_me_centric_claims(
+            parsed,
+            raw_text="金曜から喉の調子が悪くなり、案の定土曜日はさらに悪化した",
+            declared_type="journal",
+            occurred_at_utc="2026-02-22T00:00:00Z",
+        )
+        self.assertEqual(len(out.claims), 2)
+        self.assertIn("喉の調子", out.claims[1].object_text)
+        self.assertIn("悪化", out.claims[1].object_text)
+
+    def test_restores_source_language_and_then_completes_fragment(self) -> None:
+        c1 = _claim("me", "experienced", "sore throat starting Friday")
+        c2 = _claim("me", "experienced", "worsened on Saturday")
+        c1 = ParsedClaim(
+            **{
+                **c1.__dict__,
+                "evidence_spans": [ParsedEvidenceSpan(char_start=None, char_end=None, excerpt="金曜から喉の調子が悪くなり")],
+            }
+        )
+        c2 = ParsedClaim(
+            **{
+                **c2.__dict__,
+                "evidence_spans": [ParsedEvidenceSpan(char_start=None, char_end=None, excerpt="案の定土曜日はさらに悪化した")],
+            }
+        )
+        parsed = ParsedClaimsOutput(claims=[c1, c2], entities=[], links=[])
+        out = normalize_to_me_centric_claims(
+            parsed,
+            raw_text="バイブコーディング楽しくてずっと作業しちゃってたからか、金曜から喉の調子が悪くなり、案の定土曜日はさらに悪化した。",
+            declared_type="journal",
+            occurred_at_utc="2026-02-22T00:00:00Z",
+        )
+        self.assertIn("喉の調子", out.claims[0].object_text)
+        self.assertIn("喉の調子", out.claims[1].object_text)
+        self.assertIn("悪化", out.claims[1].object_text)
+
 
 if __name__ == "__main__":
     unittest.main()

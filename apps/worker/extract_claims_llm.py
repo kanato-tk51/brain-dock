@@ -43,6 +43,7 @@ DEFAULT_LLM_MODEL = "gpt-4.1-mini"
 DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_TIMEOUT_S = 45
 DEFAULT_LLM_MAX_INPUT_CHARS = 7000
+DEFAULT_LLM_REASONING_EFFORT = "none"
 
 MODEL_PRICING_PER_1M_USD: dict[str, dict[str, float]] = {
     "gpt-4.1-mini": {"input": 0.40, "cached_input": 0.10, "output": 1.60},
@@ -56,6 +57,18 @@ DECISION_PREDICATES = {"chose", "ended", "decided"}
 EVENT_PREDICATES = {"happened", "experienced", "was_affected_by"}
 CAUSE_HINT_RE = re.compile(r"(because|due to|ので|から|ため|せいで)", re.IGNORECASE)
 RAIN_HINT_RE = re.compile(r"(rain|雨)", re.IGNORECASE)
+TEMPORAL_PREFIX_RE = re.compile(
+    r"^(今日|昨日|明日|今朝|今夜|昨夜|先週|今週|来週|先月|今月|来月|月曜(?:日)?|火曜(?:日)?|水曜(?:日)?|木曜(?:日)?|金曜(?:日)?|土曜(?:日)?|日曜(?:日)?)は"
+)
+STATE_CHANGE_HINT_RE = re.compile(
+    r"(悪化|改善|回復|低下|上昇|不調|悪く|良く|崩れ|しんど|痛|つら|worsen|worsened|worsening|improv|recover)",
+    re.IGNORECASE,
+)
+TOPIC_HINT_RE = re.compile(
+    r"(喉(?:の調子)?|のど|体調|熱|咳|頭痛|胃|声|鼻|睡眠|気分|疲労|sore throat|throat|condition|health)",
+    re.IGNORECASE,
+)
+CJK_RE = re.compile(r"[ぁ-んァ-ヶ一-龠]")
 
 PREDICATE_ALIAS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(went_to|go|visit|行った|行く|向かった|訪れた)", re.IGNORECASE), "went_to"),
@@ -130,6 +143,11 @@ def _estimate_request_cost_usd(
     return round(max(usd, 0.0), 6), pricing["input"], pricing["cached_input"], pricing["output"]
 
 
+def _supports_reasoning_effort(model: str) -> bool:
+    normalized = model.lower().strip()
+    return normalized.startswith("o") or normalized.startswith("gpt-5")
+
+
 def _normalize_subject_text(subject_text: str) -> str:
     value = subject_text.strip()
     if not value:
@@ -200,6 +218,101 @@ def _make_fallback_me_claim(raw_text: str, occurred_at_utc: str | None) -> Parse
     )
 
 
+def _contains_cjk(text: str) -> bool:
+    return bool(CJK_RE.search(text))
+
+
+def _restore_object_text_from_evidence_if_translated(
+    object_text: str,
+    *,
+    raw_text: str,
+    evidence_spans: list[ParsedEvidenceSpan],
+) -> str:
+    if not raw_text.strip() or not evidence_spans:
+        return object_text
+    if not _contains_cjk(raw_text):
+        return object_text
+    if _contains_cjk(object_text):
+        return object_text
+    excerpt = evidence_spans[0].excerpt.strip()
+    if excerpt and _contains_cjk(excerpt):
+        return excerpt[:1000]
+    return object_text
+
+
+def _extract_context_topic(text: str) -> str | None:
+    value = text.strip()
+    if not value:
+        return None
+    m = re.search(r"(?P<topic>[^、。]{1,24}?)が(?:悪化|悪く|改善|回復|低下|上昇|不調|痛)", value)
+    if m:
+        topic = m.group("topic").strip()
+        if topic:
+            return topic[:24]
+    m = TOPIC_HINT_RE.search(value)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _needs_context_completion(text: str) -> bool:
+    value = text.strip()
+    if not value:
+        return False
+    if TOPIC_HINT_RE.search(value):
+        return False
+    if not STATE_CHANGE_HINT_RE.search(value):
+        return False
+    if TEMPORAL_PREFIX_RE.search(value):
+        return True
+    if value.startswith(("さらに", "急に", "案の定")):
+        return True
+    return len(value) <= 24
+
+
+def _normalize_time_expression_prefix(text: str) -> str:
+    value = text.strip()
+    value = re.sub(r"^案の定", "", value).strip()
+    value = TEMPORAL_PREFIX_RE.sub(r"\1に", value, count=1)
+    return value
+
+
+def _apply_context_completion(claims: list[ParsedClaim]) -> list[ParsedClaim]:
+    latest_topic: str | None = None
+    out: list[ParsedClaim] = []
+
+    for claim in claims:
+        object_text = claim.object_text.strip()
+        current_topic = _extract_context_topic(object_text)
+        if current_topic:
+            latest_topic = current_topic
+            out.append(claim)
+            continue
+
+        if latest_topic and _needs_context_completion(object_text) and latest_topic not in object_text:
+            enriched = f"{latest_topic}が{_normalize_time_expression_prefix(object_text)}"
+            out.append(
+                ParsedClaim(
+                    subject_text=claim.subject_text,
+                    predicate=claim.predicate,
+                    object_text=enriched[:1000],
+                    modality=claim.modality,
+                    polarity=claim.polarity,
+                    certainty=claim.certainty,
+                    time_start_utc=claim.time_start_utc,
+                    time_end_utc=claim.time_end_utc,
+                    subject_entity_name=claim.subject_entity_name,
+                    object_entity_name=claim.object_entity_name,
+                    evidence_spans=claim.evidence_spans,
+                )
+            )
+            continue
+
+        out.append(claim)
+
+    return out
+
+
 def normalize_to_me_centric_claims(
     parsed: ParsedClaimsOutput,
     *,
@@ -211,10 +324,15 @@ def normalize_to_me_centric_claims(
     for claim in parsed.claims:
         subject_text = _normalize_subject_text(claim.subject_text)
         predicate = _canonicalize_predicate(claim.predicate, claim.object_text)
+        normalized_object = _restore_object_text_from_evidence_if_translated(
+            claim.object_text[:1000],
+            raw_text=raw_text,
+            evidence_spans=claim.evidence_spans,
+        )
         normalized = ParsedClaim(
             subject_text=subject_text,
             predicate=predicate,
-            object_text=claim.object_text[:1000],
+            object_text=normalized_object,
             modality=claim.modality,
             polarity=claim.polarity,
             certainty=claim.certainty,
@@ -264,6 +382,8 @@ def normalize_to_me_centric_claims(
     elif not filtered_claims:
         filtered_claims = [_make_fallback_me_claim(raw_text, occurred_at_utc)]
         index_map = {0: 0}
+
+    filtered_claims = _apply_context_completion(filtered_claims)
 
     filtered_links: list[ParsedClaimLink] = []
     for link in parsed.links:
@@ -712,6 +832,7 @@ def extract_with_llm(
     document: dict[str, Any],
     llm_text: str,
     model: str,
+    reasoning_effort: str,
     base_url: str,
     api_key: str,
     timeout_s: int,
@@ -727,6 +848,7 @@ def extract_with_llm(
                     "Center extraction on the user as subject 'me'. "
                     "Prefer claims that describe what me did, chose, felt, experienced, and with whom. "
                     "Keep non-me events only when they affected me or explain my decisions. "
+                    "Object text must be self-contained and understandable alone, with minimal context completion if needed. "
                     "Use only allowed predicates from the schema enum. "
                     "When a decision/action is caused by an event, output two claims and add a link relation_type='caused_by' "
                     "from decision claim to cause claim. "
@@ -754,6 +876,8 @@ def extract_with_llm(
             },
         },
     }
+    if reasoning_effort != "none" and _supports_reasoning_effort(model):
+        payload["reasoning_effort"] = reasoning_effort
     url = base_url.rstrip("/") + "/chat/completions"
     req = urlrequest.Request(
         url,
@@ -782,6 +906,7 @@ def extract_with_llm(
         "document_id": document["id"],
         "entry_id": document["entry_id"],
         "declared_type": document["declared_type"],
+        "reasoning_effort": reasoning_effort,
     }
 
     try:
@@ -976,6 +1101,7 @@ def run(args: argparse.Namespace) -> int:
             document=document,
             llm_text=redaction.llm_text[: args.llm_max_input_chars],
             model=args.llm_model,
+            reasoning_effort=args.llm_reasoning_effort,
             base_url=args.llm_base_url,
             api_key=api_key,
             timeout_s=args.llm_timeout,
@@ -1047,6 +1173,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--replace-existing", action="store_true", help="Replace existing active claims for the entry")
     parser.add_argument("--dry-run", action="store_true", help="No DB writes")
     parser.add_argument("--llm-model", default=DEFAULT_LLM_MODEL, help="OpenAI model")
+    parser.add_argument(
+        "--llm-reasoning-effort",
+        choices=["none", "low", "medium", "high"],
+        default=DEFAULT_LLM_REASONING_EFFORT,
+        help="Reasoning effort (used only for models that support reasoning controls)",
+    )
     parser.add_argument("--llm-base-url", default=DEFAULT_LLM_BASE_URL, help="OpenAI API base URL")
     parser.add_argument("--llm-api-key-env", default="OPENAI_API_KEY", help="API key environment variable")
     parser.add_argument("--llm-timeout", type=int, default=DEFAULT_LLM_TIMEOUT_S, help="Timeout seconds")

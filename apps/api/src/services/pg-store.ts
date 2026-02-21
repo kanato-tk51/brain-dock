@@ -661,6 +661,8 @@ export class PgStore implements DataStore {
 
   async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
     const parsed = runAnalysisInputSchema.parse(input);
+    const llmModel = parsed.llmModel ?? process.env.BRAIN_DOCK_LLM_MODEL ?? "gpt-4.1-mini";
+    const reasoningEffort = parsed.reasoningEffort ?? "none";
     const results: AnalysisEntryResult[] = [];
     const jobId = newId();
     const client = await this.pool.connect();
@@ -672,7 +674,7 @@ export class PgStore implements DataStore {
           id, trigger_mode, status, requested_by, extractor_version, requested_at, total_items
         ) values ($1, 'manual', 'queued', 'user', $2, now(), $3)
         `,
-        [jobId, `llm-${process.env.BRAIN_DOCK_LLM_MODEL ?? "gpt-4.1-mini"}`, parsed.entryIds.length],
+        [jobId, `llm-${llmModel}-r:${reasoningEffort}`, parsed.entryIds.length],
       );
       for (const entryId of parsed.entryIds) {
         await client.query(
@@ -750,7 +752,20 @@ export class PgStore implements DataStore {
           [item.id, documentId],
         );
 
-        const workerArgs = ["--entry-id", entry.id, "--document-id", documentId, "--job-id", jobId, "--job-item-id", item.id];
+        const workerArgs = [
+          "--entry-id",
+          entry.id,
+          "--document-id",
+          documentId,
+          "--job-id",
+          jobId,
+          "--job-item-id",
+          item.id,
+          "--llm-model",
+          llmModel,
+          "--llm-reasoning-effort",
+          reasoningEffort,
+        ];
         if (parsed.replaceExisting) {
           workerArgs.push("--replace-existing");
         }

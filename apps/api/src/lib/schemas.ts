@@ -14,6 +14,7 @@ export const openAiPeriods = ["day", "week", "month"] as const;
 export const openAiRequestStatuses = ["ok", "error", "timeout", "canceled"] as const;
 export const analysisJobStatuses = ["queued", "running", "succeeded", "failed"] as const;
 export const analysisJobItemStatuses = ["queued", "running", "succeeded", "failed", "blocked"] as const;
+export const analysisReasoningEfforts = ["none", "low", "medium", "high"] as const;
 export const factModalities = ["fact", "plan", "hypothesis", "request", "feeling"] as const;
 export const factPolarities = ["affirm", "negate"] as const;
 export const factClaimStatuses = ["active", "retracted", "superseded"] as const;
@@ -25,6 +26,7 @@ export const openAiPeriodSchema = z.enum(openAiPeriods);
 export const openAiRequestStatusSchema = z.enum(openAiRequestStatuses);
 export const analysisJobStatusSchema = z.enum(analysisJobStatuses);
 export const analysisJobItemStatusSchema = z.enum(analysisJobItemStatuses);
+export const analysisReasoningEffortSchema = z.enum(analysisReasoningEfforts);
 export const factModalitySchema = z.enum(factModalities);
 export const factPolaritySchema = z.enum(factPolarities);
 export const factClaimStatusSchema = z.enum(factClaimStatuses);
@@ -225,6 +227,8 @@ export const openAiCostSummarySchema = z.object({
 export const runAnalysisInputSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1).max(200),
   replaceExisting: z.boolean().default(true),
+  llmModel: z.string().trim().min(1).max(100).optional(),
+  reasoningEffort: analysisReasoningEffortSchema.default("none"),
 });
 
 export const analysisEntryResultSchema = z.object({
@@ -342,6 +346,7 @@ export type AnalysisEntryResult = z.infer<typeof analysisEntryResultSchema>;
 export type RunAnalysisResult = z.infer<typeof runAnalysisResultSchema>;
 export type AnalysisJobStatus = z.infer<typeof analysisJobStatusSchema>;
 export type AnalysisJobItemStatus = z.infer<typeof analysisJobItemStatusSchema>;
+export type AnalysisReasoningEffort = z.infer<typeof analysisReasoningEffortSchema>;
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export type AnalysisJobItem = z.infer<typeof analysisJobItemSchema>;
 export type AnalysisJobQuery = z.infer<typeof analysisJobQuerySchema>;

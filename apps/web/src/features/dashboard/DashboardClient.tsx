@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { EntryType } from "@/domain/schemas";
+import type { AnalysisReasoningEffort, EntryType } from "@/domain/schemas";
 import { entryTypes } from "@/domain/schemas";
 import { SimpleCaptureForm } from "@/features/capture/SimpleCaptureForm";
 import { getRepository } from "@/infra/repository-singleton";
@@ -28,6 +28,14 @@ const analysisActionButtonClassName =
 const analyzedBadgeClassName =
   "rounded-full border border-[#8ecf9c] bg-[#e8f7ec] px-2.5 py-1 text-xs font-medium text-[#1c6a2b]";
 
+const availableAnalysisModels = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"] as const;
+const reasoningEffortLabels: Record<AnalysisReasoningEffort, string> = {
+  none: "なし",
+  low: "低",
+  medium: "中",
+  high: "高",
+};
+
 export function DashboardClient() {
   const repo = useMemo(() => getRepository(), []);
   const { searchText, filters, setSearchText, toggleType, setDateRange, setTags, clearFilters } =
@@ -38,6 +46,8 @@ export function DashboardClient() {
   const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
+  const [analysisModel, setAnalysisModel] = useState<(typeof availableAnalysisModels)[number]>("gpt-4.1-mini");
+  const [analysisReasoningEffort, setAnalysisReasoningEffort] = useState<AnalysisReasoningEffort>("none");
 
   useEffect(() => {
     setFromLocal(filters.fromUtc ? toLocalInputValue(filters.fromUtc) : "");
@@ -83,8 +93,10 @@ export function DashboardClient() {
       const result = await repo.runAnalysisForEntries({
         entryIds,
         replaceExisting: true,
+        llmModel: analysisModel,
+        reasoningEffort: analysisReasoningEffort,
       });
-      summaryMessage = `解析完了 (job: ${result.jobId}): 成功 ${result.succeeded}件 / 失敗 ${result.failed}件`;
+      summaryMessage = `解析完了 (job: ${result.jobId}): 成功 ${result.succeeded}件 / 失敗 ${result.failed}件 / model: ${analysisModel} / reasoning: ${analysisReasoningEffort}`;
 
       const queue = await repo.listSyncQueue();
       const pendingTargets = queue.filter((item) => item.status === "pending" && targetEntryIds.has(item.entryId));
@@ -155,7 +167,33 @@ export function DashboardClient() {
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold">投稿一覧</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 rounded-xl2 border border-[#d8d2c7] bg-white/70 px-2 py-1">
+                <label htmlFor="analysis-model" className="text-xs text-ink/70">モデル</label>
+                <select
+                  id="analysis-model"
+                  value={analysisModel}
+                  onChange={(e) => setAnalysisModel(e.target.value as (typeof availableAnalysisModels)[number])}
+                  className="bg-transparent text-xs text-ink focus:outline-none"
+                >
+                  {availableAnalysisModels.map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1 rounded-xl2 border border-[#d8d2c7] bg-white/70 px-2 py-1">
+                <label htmlFor="analysis-reasoning" className="text-xs text-ink/70">reasoning</label>
+                <select
+                  id="analysis-reasoning"
+                  value={analysisReasoningEffort}
+                  onChange={(e) => setAnalysisReasoningEffort(e.target.value as AnalysisReasoningEffort)}
+                  className="bg-transparent text-xs text-ink focus:outline-none"
+                >
+                  {Object.entries(reasoningEffortLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
               <Button
                 variant="ghost"
                 onClick={() => {

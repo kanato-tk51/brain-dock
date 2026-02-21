@@ -10,17 +10,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 
-EXTRACTOR_VERSION = "rules-v1"
+EXTRACTOR_VERSION_RULES = "rules-v1"
 DEFAULT_MIN_CONFIDENCE = 0.70
 DEFAULT_MAX_FACTS_PER_ITEM = 12
+DEFAULT_LLM_MODEL = "gpt-4.1-mini"
+DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_LLM_TIMEOUT_S = 45
+DEFAULT_LLM_MAX_INPUT_CHARS = 6000
 
 SUPPORTED_OBJECT_TYPES = {"text", "number", "date", "bool", "json"}
 
@@ -50,18 +57,6 @@ class Fact:
 
     def key(self) -> tuple[str, str, str]:
         return (self.subject.strip(), self.predicate.strip(), self.object_text.strip())
-
-    def to_record(self) -> dict[str, Any]:
-        return {
-            "subject": self.subject.strip(),
-            "predicate": self.predicate.strip(),
-            "object_text": self.object_text.strip(),
-            "object_type": self.object_type.strip(),
-            "object_json": self.object_json,
-            "evidence_excerpt": self.evidence_excerpt,
-            "occurred_at": self.occurred_at,
-            "confidence": self.confidence,
-        }
 
 
 def _new_id() -> str:
@@ -116,7 +111,7 @@ def make_meta_fact(
     )
 
 
-def extract_from_note(row: sqlite3.Row, max_facts: int) -> list[Fact]:
+def extract_from_note_rules(row: sqlite3.Row, max_facts: int) -> list[Fact]:
     note_id = row["id"]
     note_type = row["note_type"]
     occurred_at = row["occurred_at"]
@@ -207,7 +202,7 @@ def extract_from_note(row: sqlite3.Row, max_facts: int) -> list[Fact]:
     return dedupe_facts(facts, max_facts=max_facts)
 
 
-def extract_from_task(row: sqlite3.Row, max_facts: int) -> list[Fact]:
+def extract_from_task_rules(row: sqlite3.Row, max_facts: int) -> list[Fact]:
     task_id = row["id"]
     title = row["title"] or ""
     details = row["details"] or ""
@@ -462,12 +457,13 @@ def insert_facts(
     facts: list[Fact],
     min_confidence: float,
     dry_run: bool,
+    extractor_version: str,
 ) -> tuple[int, int]:
     inserted = 0
     skipped = 0
 
     for fact in facts:
-        ok, reason = validate_fact_schema(fact)
+        ok, _ = validate_fact_schema(fact)
         if not ok:
             skipped += 1
             continue
@@ -501,7 +497,7 @@ def insert_facts(
                 fact.occurred_at,
                 fact.confidence,
                 "internal",
-                EXTRACTOR_VERSION,
+                extractor_version,
             ),
         )
         inserted += 1
@@ -524,15 +520,253 @@ def resolve_schema_path(schema_arg: str) -> Path:
     )
 
 
-def ensure_schema_file_exists(path: Path) -> None:
-    # The worker currently performs lightweight validation in Python.
-    # We still ensure the schema file exists as contract documentation.
+def load_schema(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
-        json.load(f)
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("schema must be a JSON object")
+    return data
+
+
+def note_prompt_payload(row: sqlite3.Row, max_chars: int) -> dict[str, Any]:
+    return {
+        "item_type": "note",
+        "id": row["id"],
+        "note_type": row["note_type"],
+        "title": clamp_text((row["title"] or ""), 300),
+        "summary": clamp_text((row["summary"] or ""), 500),
+        "body": clamp_text((row["body"] or ""), max_chars),
+        "occurred_at": row["occurred_at"],
+        "journal_date": row["journal_date"],
+        "mood_score": row["mood_score"],
+        "energy_score": row["energy_score"],
+        "source_url": row["source_url"],
+    }
+
+
+def task_prompt_payload(row: sqlite3.Row, max_chars: int) -> dict[str, Any]:
+    return {
+        "item_type": "task",
+        "id": row["id"],
+        "title": clamp_text((row["title"] or ""), 300),
+        "details": clamp_text((row["details"] or ""), max_chars),
+        "status": row["status"],
+        "priority": row["priority"],
+        "due_at": row["due_at"],
+        "scheduled_at": row["scheduled_at"],
+        "done_at": row["done_at"],
+        "source_note_id": row["source_note_id"],
+    }
+
+
+def _parse_facts_payload(payload: Any, max_facts: int) -> list[Fact]:
+    if isinstance(payload, dict):
+        raw_items = payload.get("facts", [])
+    else:
+        raw_items = payload
+
+    if not isinstance(raw_items, list):
+        raise ValueError("LLM response facts must be a list")
+
+    facts: list[Fact] = []
+    for item in raw_items[:max_facts]:
+        if not isinstance(item, dict):
+            continue
+        subject = str(item.get("subject", "")).strip()
+        predicate = str(item.get("predicate", "")).strip()
+        object_text = str(item.get("object_text", "")).strip()
+        object_type = str(item.get("object_type", "text")).strip() or "text"
+        evidence_excerpt = item.get("evidence_excerpt")
+        occurred_at = item.get("occurred_at")
+        object_json = item.get("object_json")
+        confidence_raw = item.get("confidence", 0.8)
+
+        try:
+            confidence = float(confidence_raw)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        fact = Fact(
+            subject=clamp_text(subject, 120),
+            predicate=clamp_text(predicate, 80),
+            object_text=clamp_text(object_text, 1000),
+            object_type=object_type,
+            object_json=(str(object_json) if object_json is not None else None),
+            evidence_excerpt=(
+                clamp_text(str(evidence_excerpt), 500)
+                if evidence_excerpt is not None and str(evidence_excerpt).strip()
+                else None
+            ),
+            occurred_at=(str(occurred_at) if occurred_at is not None else None),
+            confidence=confidence,
+        )
+        facts.append(fact)
+
+    return dedupe_facts(facts, max_facts=max_facts)
+
+
+def _extract_json_text_from_chat_response(data: dict[str, Any]) -> str:
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("LLM response missing choices")
+
+    message = choices[0].get("message", {})
+    content = message.get("content")
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        pieces: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str):
+                    pieces.append(text)
+        joined = "".join(pieces).strip()
+        if joined:
+            return joined
+
+    raise ValueError("LLM response content is not a JSON string")
+
+
+def extract_with_llm(
+    *,
+    item_payload: dict[str, Any],
+    schema_array: dict[str, Any],
+    api_key: str,
+    model: str,
+    base_url: str,
+    timeout_s: int,
+    max_facts: int,
+) -> list[Fact]:
+    wrapper_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["facts"],
+        "properties": {
+            "facts": schema_array,
+        },
+    }
+
+    system_prompt = (
+        "You extract compact factual memories from personal notes/tasks. "
+        "Return only factual claims that are explicitly supported by the input. "
+        "No speculation. Keep predicates short and reusable."
+    )
+
+    user_prompt = (
+        "Extract key facts from this item. "
+        "Use subject/predicate/object_text. "
+        "Set confidence between 0 and 1.\n\n"
+        f"ITEM:\n{json.dumps(item_payload, ensure_ascii=False)}"
+    )
+
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "key_facts_output",
+                "strict": True,
+                "schema": wrapper_schema,
+            },
+        },
+    }
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    req = urlrequest.Request(
+        url,
+        method="POST",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urlrequest.urlopen(req, timeout=timeout_s) as resp:
+            body = resp.read().decode("utf-8")
+    except urlerror.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"LLM HTTPError: {e.code} {detail}") from e
+    except urlerror.URLError as e:
+        raise RuntimeError(f"LLM URLError: {e}") from e
+
+    data = json.loads(body)
+    json_text = _extract_json_text_from_chat_response(data)
+    structured_payload = json.loads(json_text)
+    return _parse_facts_payload(structured_payload, max_facts=max_facts)
+
+
+def extract_facts_for_note(
+    row: sqlite3.Row,
+    *,
+    extractor: Literal["rules", "llm"],
+    args: argparse.Namespace,
+    schema_array: dict[str, Any],
+) -> list[Fact]:
+    if extractor == "rules":
+        return extract_from_note_rules(row, max_facts=args.max_facts_per_item)
+
+    api_key = os.environ.get(args.llm_api_key_env)
+    if not api_key:
+        raise RuntimeError(f"environment variable not set: {args.llm_api_key_env}")
+
+    payload = note_prompt_payload(row, max_chars=args.llm_max_input_chars)
+    return extract_with_llm(
+        item_payload=payload,
+        schema_array=schema_array,
+        api_key=api_key,
+        model=args.llm_model,
+        base_url=args.llm_base_url,
+        timeout_s=args.llm_timeout,
+        max_facts=args.max_facts_per_item,
+    )
+
+
+def extract_facts_for_task(
+    row: sqlite3.Row,
+    *,
+    extractor: Literal["rules", "llm"],
+    args: argparse.Namespace,
+    schema_array: dict[str, Any],
+) -> list[Fact]:
+    if extractor == "rules":
+        return extract_from_task_rules(row, max_facts=args.max_facts_per_item)
+
+    api_key = os.environ.get(args.llm_api_key_env)
+    if not api_key:
+        raise RuntimeError(f"environment variable not set: {args.llm_api_key_env}")
+
+    payload = task_prompt_payload(row, max_chars=args.llm_max_input_chars)
+    return extract_with_llm(
+        item_payload=payload,
+        schema_array=schema_array,
+        api_key=api_key,
+        model=args.llm_model,
+        base_url=args.llm_base_url,
+        timeout_s=args.llm_timeout,
+        max_facts=args.max_facts_per_item,
+    )
 
 
 def run(args: argparse.Namespace) -> int:
-    ensure_schema_file_exists(resolve_schema_path(args.schema))
+    schema = load_schema(resolve_schema_path(args.schema))
+    if schema.get("type") != "array":
+        raise ValueError("key_facts schema root must be array")
+
+    extractor: Literal["rules", "llm"] = args.extractor
+    extractor_version = (
+        EXTRACTOR_VERSION_RULES if extractor == "rules" else f"llm-{args.llm_model}"
+    )
+
     conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
 
@@ -540,6 +774,7 @@ def run(args: argparse.Namespace) -> int:
     total_inserted = 0
     total_skipped = 0
     total_replaced = 0
+    errors = 0
 
     try:
         if args.source in {"all", "notes"}:
@@ -551,7 +786,16 @@ def run(args: argparse.Namespace) -> int:
             )
             for note in notes:
                 total_items += 1
-                facts = extract_from_note(note, max_facts=args.max_facts_per_item)
+                try:
+                    facts = extract_facts_for_note(
+                        note,
+                        extractor=extractor,
+                        args=args,
+                        schema_array=schema,
+                    )
+                except Exception:
+                    errors += 1
+                    continue
                 if args.replace_existing and not args.dry_run:
                     total_replaced += soft_delete_existing_facts(conn, note_id=note["id"])
                 ins, skp = insert_facts(
@@ -560,6 +804,7 @@ def run(args: argparse.Namespace) -> int:
                     facts=facts,
                     min_confidence=args.min_confidence,
                     dry_run=args.dry_run,
+                    extractor_version=extractor_version,
                 )
                 total_inserted += ins
                 total_skipped += skp
@@ -573,7 +818,16 @@ def run(args: argparse.Namespace) -> int:
             )
             for task in tasks:
                 total_items += 1
-                facts = extract_from_task(task, max_facts=args.max_facts_per_item)
+                try:
+                    facts = extract_facts_for_task(
+                        task,
+                        extractor=extractor,
+                        args=args,
+                        schema_array=schema,
+                    )
+                except Exception:
+                    errors += 1
+                    continue
                 if args.replace_existing and not args.dry_run:
                     total_replaced += soft_delete_existing_facts(conn, task_id=task["id"])
                 ins, skp = insert_facts(
@@ -582,6 +836,7 @@ def run(args: argparse.Namespace) -> int:
                     facts=facts,
                     min_confidence=args.min_confidence,
                     dry_run=args.dry_run,
+                    extractor_version=extractor_version,
                 )
                 total_inserted += ins
                 total_skipped += skp
@@ -596,12 +851,14 @@ def run(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "source": args.source,
+                "extractor": extractor,
                 "items_processed": total_items,
                 "facts_inserted": total_inserted,
                 "facts_skipped": total_skipped,
                 "facts_replaced": total_replaced,
+                "errors": errors,
                 "dry_run": args.dry_run,
-                "extractor_version": EXTRACTOR_VERSION,
+                "extractor_version": extractor_version,
             },
             ensure_ascii=False,
         )
@@ -655,7 +912,40 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--schema",
         default="schemas/json/key_facts.schema.json",
-        help="Schema file path (contract check)",
+        help="Schema file path for structured key_facts",
+    )
+    parser.add_argument(
+        "--extractor",
+        choices=["rules", "llm"],
+        default="rules",
+        help="Extractor backend",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default=DEFAULT_LLM_MODEL,
+        help="LLM model for structured output (when --extractor llm)",
+    )
+    parser.add_argument(
+        "--llm-base-url",
+        default=DEFAULT_LLM_BASE_URL,
+        help="LLM API base URL (when --extractor llm)",
+    )
+    parser.add_argument(
+        "--llm-api-key-env",
+        default="OPENAI_API_KEY",
+        help="Environment variable name containing API key",
+    )
+    parser.add_argument(
+        "--llm-timeout",
+        type=int,
+        default=DEFAULT_LLM_TIMEOUT_S,
+        help="LLM request timeout seconds",
+    )
+    parser.add_argument(
+        "--llm-max-input-chars",
+        type=int,
+        default=DEFAULT_LLM_MAX_INPUT_CHARS,
+        help="Max chars sent to LLM for a single item",
     )
     return parser
 

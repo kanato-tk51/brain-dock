@@ -27,8 +27,17 @@
 6. `confidence >= 0.70` のみ `key_facts` に保存
 
 ## 実装済みジョブ
+- ファイル: `apps/worker/process_captures.py`
+- 方式: `captures_raw` から `notes/tasks` をルール変換（MVP）
+
+```bash
+python3 apps/worker/process_captures.py --db ./brain_dock.db
+```
+
 - ファイル: `apps/worker/extract_key_facts.py`
-- 方式: ルールベース抽出 + スキーマバリデーション + `confidence` 閾値保存
+- 方式:
+  - `--extractor rules`: ルールベース抽出 + スキーマバリデーション
+  - `--extractor llm`: LLM structured output + スキーマバリデーション
 
 ### 実行例
 ```bash
@@ -44,6 +53,9 @@ python3 apps/worker/extract_key_facts.py \
 - `--replace-existing`（既存factをsoft-deleteして再生成）
 - `--min-confidence 0.70`
 - `--dry-run`
+- `--extractor rules|llm`
+- `--llm-model gpt-4.1-mini`
+- `--llm-api-key-env OPENAI_API_KEY`
 
 ## 抽出プロンプトのルール
 - 推測で埋めない（不明はnull）

@@ -26,8 +26,12 @@
 - 今日のTODO: `docs/next-steps/today-start.md`
 
 ## 実装済みジョブ
-- `notes/tasks -> key_facts` 抽出:
+- `captures_raw -> notes/tasks` 変換:
+  `python3 apps/worker/process_captures.py --db ./brain_dock.db`
+- `notes/tasks -> key_facts` 抽出（ルール）:
   `python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing`
+- `notes/tasks -> key_facts` 抽出（LLM structured output）:
+  `OPENAI_API_KEY=*** python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing --extractor llm`
 
 ## リポジトリ構成
 - `apps/`: 実アプリ（CLI / API / UI）

@@ -43,15 +43,21 @@
 ### 検索方式
 - レキシカル: FTS5（日本語はトークナイザ検討）
 - セマンティック: 埋め込みベクトル検索
+- ファクト検索: `key_facts` のSPO検索（subject/predicate/object）
 - フィルタ: `note_type/status/tag/date/sensitivity`
 
 ### ランキング（初期）
-`score = 0.45 * semantic + 0.35 * lexical + 0.15 * recency + 0.05 * tag_overlap`
+`score = 0.35 * semantic + 0.25 * lexical + 0.20 * fact_match + 0.15 * recency + 0.05 * tag_overlap`
 
 ### 出力
 - `Recall Card`: 3行要約 + 根拠リンク3件
 - `Evidence List`: タイムスタンプ付き原文断片
 - `Action Draft`: 次に言うべき一文候補
+
+### AI向け参照順
+1. `v_ai_key_facts` から高信頼事実を取得
+2. `v_ai_memory_items` から該当ノート/タスク本文を補完
+3. 足りないときのみ `captures_raw` を参照
 
 ## 5. 会話アシスト実装
 1. 音声入力（または会議字幕）を 5〜10秒窓で受信

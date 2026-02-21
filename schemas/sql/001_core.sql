@@ -100,6 +100,30 @@ CREATE TABLE IF NOT EXISTS note_links (
   FOREIGN KEY (to_note_id) REFERENCES notes(id)
 );
 
+CREATE TABLE IF NOT EXISTS key_facts (
+  id TEXT PRIMARY KEY,
+  note_id TEXT,
+  task_id TEXT,
+  subject TEXT NOT NULL,
+  predicate TEXT NOT NULL,
+  object_text TEXT NOT NULL,
+  object_type TEXT NOT NULL DEFAULT 'text', -- text, number, date, bool, json
+  object_json TEXT,
+  evidence_excerpt TEXT,
+  occurred_at TEXT,
+  confidence REAL NOT NULL DEFAULT 0.80,
+  sensitivity TEXT NOT NULL DEFAULT 'internal',
+  extractor_version TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
+  CHECK ((note_id IS NOT NULL AND task_id IS NULL) OR (note_id IS NULL AND task_id IS NOT NULL)),
+  CHECK (object_type IN ('text', 'number', 'date', 'bool', 'json')),
+  CHECK (confidence BETWEEN 0 AND 1),
+  FOREIGN KEY (note_id) REFERENCES notes(id),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_events (
   id TEXT PRIMARY KEY,
   actor TEXT NOT NULL,
@@ -122,6 +146,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
   task_id UNINDEXED,
   title,
   details
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS key_facts_fts USING fts5(
+  fact_id UNINDEXED,
+  subject,
+  predicate,
+  object_text,
+  evidence_excerpt
 );
 
 CREATE TRIGGER IF NOT EXISTS trg_notes_ai AFTER INSERT ON notes BEGIN
@@ -154,8 +186,78 @@ CREATE TRIGGER IF NOT EXISTS trg_tasks_ad AFTER DELETE ON tasks BEGIN
   DELETE FROM tasks_fts WHERE task_id = old.id;
 END;
 
+CREATE TRIGGER IF NOT EXISTS trg_key_facts_ai AFTER INSERT ON key_facts BEGIN
+  INSERT INTO key_facts_fts(fact_id, subject, predicate, object_text, evidence_excerpt)
+  VALUES (new.id, new.subject, new.predicate, new.object_text, coalesce(new.evidence_excerpt, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_key_facts_au AFTER UPDATE ON key_facts BEGIN
+  DELETE FROM key_facts_fts WHERE fact_id = old.id;
+  INSERT INTO key_facts_fts(fact_id, subject, predicate, object_text, evidence_excerpt)
+  VALUES (new.id, new.subject, new.predicate, new.object_text, coalesce(new.evidence_excerpt, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_key_facts_ad AFTER DELETE ON key_facts BEGIN
+  DELETE FROM key_facts_fts WHERE fact_id = old.id;
+END;
+
+CREATE VIEW IF NOT EXISTS v_ai_memory_items AS
+SELECT
+  'note' AS item_type,
+  n.id AS item_id,
+  n.note_type AS subtype,
+  coalesce(n.title, '') AS title,
+  coalesce(n.summary, '') AS summary,
+  n.body AS content,
+  n.occurred_at AS occurred_at,
+  '' AS status,
+  NULL AS priority,
+  n.sensitivity AS sensitivity
+FROM notes n
+WHERE n.deleted_at IS NULL
+UNION ALL
+SELECT
+  'task' AS item_type,
+  t.id AS item_id,
+  t.status AS subtype,
+  t.title AS title,
+  coalesce(t.details, '') AS summary,
+  coalesce(t.details, t.title) AS content,
+  coalesce(t.done_at, t.due_at, t.scheduled_at, t.created_at) AS occurred_at,
+  t.status AS status,
+  t.priority AS priority,
+  t.sensitivity AS sensitivity
+FROM tasks t
+WHERE t.deleted_at IS NULL;
+
+CREATE VIEW IF NOT EXISTS v_ai_key_facts AS
+SELECT
+  k.id AS fact_id,
+  CASE WHEN k.note_id IS NOT NULL THEN 'note' ELSE 'task' END AS source_type,
+  coalesce(k.note_id, k.task_id) AS source_id,
+  k.subject,
+  k.predicate,
+  k.object_text,
+  k.object_type,
+  k.object_json,
+  k.evidence_excerpt,
+  k.occurred_at,
+  k.confidence,
+  k.sensitivity
+FROM key_facts k
+LEFT JOIN notes n ON n.id = k.note_id
+LEFT JOIN tasks t ON t.id = k.task_id
+WHERE k.deleted_at IS NULL
+  AND (k.note_id IS NULL OR n.deleted_at IS NULL)
+  AND (k.task_id IS NULL OR t.deleted_at IS NULL);
+
 CREATE INDEX IF NOT EXISTS idx_notes_type_time ON notes(note_type, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_journal_date ON notes(journal_date DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_status_created ON captures_raw(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_due ON tasks(status, due_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority, status);
+CREATE INDEX IF NOT EXISTS idx_key_facts_subject_predicate ON key_facts(subject, predicate);
+CREATE INDEX IF NOT EXISTS idx_key_facts_object_text ON key_facts(object_text);
+CREATE INDEX IF NOT EXISTS idx_key_facts_note ON key_facts(note_id);
+CREATE INDEX IF NOT EXISTS idx_key_facts_task ON key_facts(task_id);
+CREATE INDEX IF NOT EXISTS idx_key_facts_occurred_confidence ON key_facts(occurred_at DESC, confidence DESC);

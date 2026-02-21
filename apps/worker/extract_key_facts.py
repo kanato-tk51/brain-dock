@@ -15,6 +15,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping
 from urllib import error as urlerror
@@ -44,6 +45,13 @@ DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_TIMEOUT_S = 45
 DEFAULT_LLM_MAX_INPUT_CHARS = 6000
 
+MODEL_PRICING_PER_1M_USD: dict[str, dict[str, float]] = {
+    # Keep defaults configurable via env vars below.
+    "gpt-4.1-mini": {"input": 0.40, "cached_input": 0.10, "output": 1.60},
+    "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.60},
+    "gpt-4.1": {"input": 2.00, "cached_input": 0.50, "output": 8.00},
+}
+
 SUPPORTED_OBJECT_TYPES = {"text", "number", "date", "bool", "json"}
 
 PREDICATE_HINTS: list[tuple[re.Pattern[str], str]] = [
@@ -64,6 +72,190 @@ DATE_CANDIDATE_RE = re.compile(r"(?:\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?|今日
 NUMBER_CANDIDATE_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 RowLike = Mapping[str, Any]
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_environment() -> str:
+    raw = (
+        os.environ.get("BRAIN_DOCK_ENV")
+        or os.environ.get("APP_ENV")
+        or os.environ.get("VERCEL_ENV")
+        or "local"
+    ).lower()
+    if raw in {"local", "staging", "production"}:
+        return raw
+    if raw == "preview":
+        return "staging"
+    return "local"
+
+
+def _resolve_model_pricing(model: str) -> tuple[float | None, float | None, float | None]:
+    env_input = _to_float(os.environ.get("OPENAI_PRICE_INPUT_PER_1M_USD"))
+    env_cached = _to_float(os.environ.get("OPENAI_PRICE_CACHED_INPUT_PER_1M_USD"))
+    env_output = _to_float(os.environ.get("OPENAI_PRICE_OUTPUT_PER_1M_USD"))
+    if env_input is not None and env_output is not None:
+        return env_input, env_cached if env_cached is not None else env_input, env_output
+
+    pricing = MODEL_PRICING_PER_1M_USD.get(model)
+    if pricing:
+        return pricing["input"], pricing["cached_input"], pricing["output"]
+    for key, value in MODEL_PRICING_PER_1M_USD.items():
+        if model.startswith(key):
+            return value["input"], value["cached_input"], value["output"]
+    return None, None, None
+
+
+def _estimate_request_cost_usd(
+    *,
+    model: str,
+    input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
+) -> tuple[float, float | None, float | None, float | None]:
+    input_price, cached_input_price, output_price = _resolve_model_pricing(model)
+    if input_price is None or output_price is None:
+        return 0.0, None, None, None
+
+    cached = min(max(cached_input_tokens, 0), max(input_tokens, 0))
+    non_cached = max(input_tokens - cached, 0)
+    cached_price = cached_input_price if cached_input_price is not None else input_price
+
+    total_price_per_1m = (
+        non_cached * input_price
+        + cached * cached_price
+        + max(output_tokens, 0) * output_price
+    )
+    usd = total_price_per_1m / 1_000_000
+    return round(max(usd, 0.0), 6), input_price, cached_price, output_price
+
+
+def _safe_source_ref_type(value: str) -> str:
+    allowed = {"none", "capture", "note", "task", "entry", "other"}
+    return value if value in allowed else "other"
+
+
+def log_openai_request(
+    conn: Any,
+    *,
+    request_started_at: str,
+    request_finished_at: str | None,
+    status: str,
+    endpoint: str,
+    model: str,
+    operation: str,
+    workflow: str,
+    source_ref_type: str,
+    source_ref_id: str | None,
+    openai_request_id: str | None,
+    input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
+    reasoning_output_tokens: int,
+    input_chars: int | None,
+    output_chars: int | None,
+    request_cost_usd: float,
+    input_price_per_1m_usd: float | None,
+    cached_input_price_per_1m_usd: float | None,
+    output_price_per_1m_usd: float | None,
+    cost_source: str,
+    error_type: str | None,
+    error_message: str | None,
+    metadata_json: dict[str, Any],
+) -> None:
+    if is_sqlite_conn(conn):
+        return
+
+    try:
+        exec_write(
+            conn,
+            """
+            INSERT INTO public.openai_api_requests (
+              id,
+              request_started_at,
+              request_finished_at,
+              status,
+              environment,
+              endpoint,
+              model,
+              operation,
+              workflow,
+              actor,
+              source_ref_type,
+              source_ref_id,
+              openai_request_id,
+              input_tokens,
+              cached_input_tokens,
+              output_tokens,
+              reasoning_output_tokens,
+              input_chars,
+              output_chars,
+              input_price_per_1m_usd,
+              cached_input_price_per_1m_usd,
+              output_price_per_1m_usd,
+              request_cost_usd,
+              cost_source,
+              error_type,
+              error_message,
+              metadata_json
+            ) VALUES (
+              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+            )
+            """,
+            (
+                _new_id(),
+                request_started_at,
+                request_finished_at,
+                status,
+                _resolve_environment(),
+                endpoint,
+                model,
+                operation,
+                workflow,
+                "worker:extract_key_facts",
+                _safe_source_ref_type(source_ref_type),
+                source_ref_id,
+                openai_request_id,
+                max(input_tokens, 0),
+                max(cached_input_tokens, 0),
+                max(output_tokens, 0),
+                max(reasoning_output_tokens, 0),
+                input_chars,
+                output_chars,
+                input_price_per_1m_usd,
+                cached_input_price_per_1m_usd,
+                output_price_per_1m_usd,
+                max(request_cost_usd, 0.0),
+                cost_source,
+                error_type,
+                (error_message[:1000] if error_message else None),
+                json.dumps(metadata_json, ensure_ascii=False),
+            ),
+        )
+    except Exception:
+        # Logging must never break extraction flow.
+        return
 
 
 @dataclass(frozen=True)
@@ -772,6 +964,7 @@ def _extract_json_text_from_chat_response(data: dict[str, Any]) -> str:
 
 def extract_with_llm(
     *,
+    conn: Any,
     item_payload: dict[str, Any],
     schema_array: dict[str, Any],
     api_key: str,
@@ -779,6 +972,10 @@ def extract_with_llm(
     base_url: str,
     timeout_s: int,
     max_facts: int,
+    operation: str,
+    workflow: str,
+    source_ref_type: str,
+    source_ref_id: str | None,
 ) -> list[Fact]:
     wrapper_schema = {
         "type": "object",
@@ -820,6 +1017,26 @@ def extract_with_llm(
     }
 
     url = base_url.rstrip("/") + "/chat/completions"
+    request_started_at = _utc_now_iso()
+    request_finished_at: str | None = None
+    request_cost_usd = 0.0
+    openai_request_id: str | None = None
+    input_tokens = 0
+    cached_input_tokens = 0
+    output_tokens = 0
+    reasoning_output_tokens = 0
+    input_price_per_1m_usd: float | None = None
+    cached_input_price_per_1m_usd: float | None = None
+    output_price_per_1m_usd: float | None = None
+    usage_cost_source = "estimated"
+    input_chars = len(json.dumps(item_payload, ensure_ascii=False))
+    output_chars: int | None = None
+    metadata = {
+        "max_facts": max_facts,
+        "item_type": item_payload.get("item_type"),
+        "llm_base_url": base_url.rstrip("/"),
+    }
+
     req = urlrequest.Request(
         url,
         method="POST",
@@ -833,21 +1050,165 @@ def extract_with_llm(
     try:
         with urlrequest.urlopen(req, timeout=timeout_s) as resp:
             body = resp.read().decode("utf-8")
+            openai_request_id = resp.headers.get("x-request-id")
+            request_finished_at = _utc_now_iso()
     except urlerror.HTTPError as e:
+        request_finished_at = _utc_now_iso()
         detail = e.read().decode("utf-8", errors="replace")
+        log_openai_request(
+            conn,
+            request_started_at=request_started_at,
+            request_finished_at=request_finished_at,
+            status="error",
+            endpoint="/chat/completions",
+            model=model,
+            operation=operation,
+            workflow=workflow,
+            source_ref_type=source_ref_type,
+            source_ref_id=source_ref_id,
+            openai_request_id=None,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            input_chars=input_chars,
+            output_chars=output_chars,
+            request_cost_usd=0.0,
+            input_price_per_1m_usd=input_price_per_1m_usd,
+            cached_input_price_per_1m_usd=cached_input_price_per_1m_usd,
+            output_price_per_1m_usd=output_price_per_1m_usd,
+            cost_source=usage_cost_source,
+            error_type="http_error",
+            error_message=f"{e.code} {detail}",
+            metadata_json=metadata,
+        )
         raise RuntimeError(f"LLM HTTPError: {e.code} {detail}") from e
     except urlerror.URLError as e:
+        request_finished_at = _utc_now_iso()
+        status = "timeout" if "timed out" in str(e).lower() else "error"
+        log_openai_request(
+            conn,
+            request_started_at=request_started_at,
+            request_finished_at=request_finished_at,
+            status=status,
+            endpoint="/chat/completions",
+            model=model,
+            operation=operation,
+            workflow=workflow,
+            source_ref_type=source_ref_type,
+            source_ref_id=source_ref_id,
+            openai_request_id=None,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            input_chars=input_chars,
+            output_chars=output_chars,
+            request_cost_usd=0.0,
+            input_price_per_1m_usd=input_price_per_1m_usd,
+            cached_input_price_per_1m_usd=cached_input_price_per_1m_usd,
+            output_price_per_1m_usd=output_price_per_1m_usd,
+            cost_source=usage_cost_source,
+            error_type="network_error",
+            error_message=str(e),
+            metadata_json=metadata,
+        )
         raise RuntimeError(f"LLM URLError: {e}") from e
 
-    data = json.loads(body)
-    json_text = _extract_json_text_from_chat_response(data)
-    structured_payload = json.loads(json_text)
-    return _parse_facts_payload(structured_payload, max_facts=max_facts)
+    try:
+        data = json.loads(body)
+        usage = data.get("usage")
+        if isinstance(usage, dict):
+            input_tokens = _to_int(usage.get("prompt_tokens"))
+            output_tokens = _to_int(usage.get("completion_tokens"))
+            prompt_details = usage.get("prompt_tokens_details")
+            if isinstance(prompt_details, dict):
+                cached_input_tokens = _to_int(prompt_details.get("cached_tokens"))
+            completion_details = usage.get("completion_tokens_details")
+            if isinstance(completion_details, dict):
+                reasoning_output_tokens = _to_int(completion_details.get("reasoning_tokens"))
+
+        openai_request_id = (
+            str(data.get("id"))
+            if data.get("id") is not None
+            else openai_request_id
+        )
+        request_cost_usd, input_price_per_1m_usd, cached_input_price_per_1m_usd, output_price_per_1m_usd = (
+            _estimate_request_cost_usd(
+                model=model,
+                input_tokens=input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                output_tokens=output_tokens,
+            )
+        )
+        json_text = _extract_json_text_from_chat_response(data)
+        output_chars = len(json_text)
+        structured_payload = json.loads(json_text)
+        facts = _parse_facts_payload(structured_payload, max_facts=max_facts)
+    except Exception as exc:
+        log_openai_request(
+            conn,
+            request_started_at=request_started_at,
+            request_finished_at=request_finished_at or _utc_now_iso(),
+            status="error",
+            endpoint="/chat/completions",
+            model=model,
+            operation=operation,
+            workflow=workflow,
+            source_ref_type=source_ref_type,
+            source_ref_id=source_ref_id,
+            openai_request_id=openai_request_id,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            input_chars=input_chars,
+            output_chars=output_chars,
+            request_cost_usd=request_cost_usd,
+            input_price_per_1m_usd=input_price_per_1m_usd,
+            cached_input_price_per_1m_usd=cached_input_price_per_1m_usd,
+            output_price_per_1m_usd=output_price_per_1m_usd,
+            cost_source=usage_cost_source,
+            error_type="parse_error",
+            error_message=str(exc),
+            metadata_json=metadata,
+        )
+        raise
+
+    log_openai_request(
+        conn,
+        request_started_at=request_started_at,
+        request_finished_at=request_finished_at or _utc_now_iso(),
+        status="ok",
+        endpoint="/chat/completions",
+        model=model,
+        operation=operation,
+        workflow=workflow,
+        source_ref_type=source_ref_type,
+        source_ref_id=source_ref_id,
+        openai_request_id=openai_request_id,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+        input_chars=input_chars,
+        output_chars=output_chars,
+        request_cost_usd=request_cost_usd,
+        input_price_per_1m_usd=input_price_per_1m_usd,
+        cached_input_price_per_1m_usd=cached_input_price_per_1m_usd,
+        output_price_per_1m_usd=output_price_per_1m_usd,
+        cost_source=usage_cost_source,
+        error_type=None,
+        error_message=None,
+        metadata_json=metadata,
+    )
+    return facts
 
 
 def extract_facts_for_note(
     row: RowLike,
     *,
+    conn: Any,
     extractor: Literal["rules", "llm"],
     args: argparse.Namespace,
     schema_array: dict[str, Any],
@@ -861,6 +1222,7 @@ def extract_facts_for_note(
 
     payload = note_prompt_payload(row, max_chars=args.llm_max_input_chars)
     return extract_with_llm(
+        conn=conn,
         item_payload=payload,
         schema_array=schema_array,
         api_key=api_key,
@@ -868,12 +1230,17 @@ def extract_facts_for_note(
         base_url=args.llm_base_url,
         timeout_s=args.llm_timeout,
         max_facts=args.max_facts_per_item,
+        operation="extract_key_facts.note",
+        workflow="extract_key_facts",
+        source_ref_type="note",
+        source_ref_id=str(row["id"]),
     )
 
 
 def extract_facts_for_task(
     row: RowLike,
     *,
+    conn: Any,
     extractor: Literal["rules", "llm"],
     args: argparse.Namespace,
     schema_array: dict[str, Any],
@@ -887,6 +1254,7 @@ def extract_facts_for_task(
 
     payload = task_prompt_payload(row, max_chars=args.llm_max_input_chars)
     return extract_with_llm(
+        conn=conn,
         item_payload=payload,
         schema_array=schema_array,
         api_key=api_key,
@@ -894,6 +1262,10 @@ def extract_facts_for_task(
         base_url=args.llm_base_url,
         timeout_s=args.llm_timeout,
         max_facts=args.max_facts_per_item,
+        operation="extract_key_facts.task",
+        workflow="extract_key_facts",
+        source_ref_type="task",
+        source_ref_id=str(row["id"]),
     )
 
 
@@ -934,6 +1306,7 @@ def run(args: argparse.Namespace) -> int:
                 try:
                     facts = extract_facts_for_note(
                         note,
+                        conn=conn,
                         extractor=extractor,
                         args=args,
                         schema_array=schema,
@@ -966,6 +1339,7 @@ def run(args: argparse.Namespace) -> int:
                 try:
                     facts = extract_facts_for_task(
                         task,
+                        conn=conn,
                         extractor=extractor,
                         args=args,
                         schema_array=schema,

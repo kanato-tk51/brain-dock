@@ -125,4 +125,50 @@ describe("brain-dock-api", () => {
     const updated = await app.inject({ method: "GET", url: "/entries" });
     expect(updated.json()[0].syncStatus).toBe("synced");
   });
+
+  it("returns openai usage history and aggregate summary", async () => {
+    const app = await buildApp(store);
+
+    const requests = await app.inject({ method: "GET", url: "/openai/requests?limit=20" });
+    expect(requests.statusCode).toBe(200);
+    expect(requests.json()).toEqual([]);
+
+    const summary = await app.inject({ method: "GET", url: "/openai/costs/summary?period=week&limit=12" });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json().period).toBe("week");
+    expect(summary.json().totals.totalCostUsd).toBe(0);
+
+    const invalid = await app.inject({ method: "GET", url: "/openai/costs/summary?period=year" });
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it("accepts manual analysis trigger payload", async () => {
+    const app = await buildApp(store);
+    const created = await app.inject({
+      method: "POST",
+      url: "/entries/thought",
+      payload: { text: "分析ボタンから実行するテスト" },
+    });
+    const entryId = created.json().id as string;
+
+    const run = await app.inject({
+      method: "POST",
+      url: "/analysis/run",
+      payload: {
+        entryIds: [entryId],
+        extractor: "rules",
+        replaceExisting: true,
+      },
+    });
+    expect(run.statusCode).toBe(200);
+    expect(run.json().requested).toBe(1);
+    expect(run.json().results[0].entryId).toBe(entryId);
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/analysis/run",
+      payload: { entryIds: [] },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
 });

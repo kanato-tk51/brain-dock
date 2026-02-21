@@ -5,6 +5,9 @@ import {
   captureTextInputSchema,
   entryTypeSchema,
   listQuerySchema,
+  openAiCostSummaryQuerySchema,
+  openAiRequestQuerySchema,
+  runAnalysisInputSchema,
   searchQuerySchema,
   type CreateEntryInput,
   type EntryType,
@@ -28,6 +31,37 @@ function parseListQuery(query: Record<string, unknown>): ListQuery {
   });
   if (!parsed.success) {
     throw new Error("invalid list query");
+  }
+  return parsed.data;
+}
+
+function parseOpenAiRequestQuery(query: Record<string, unknown>) {
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : undefined;
+  const parsed = openAiRequestQuerySchema.safeParse({
+    fromUtc: typeof query.fromUtc === "string" ? query.fromUtc : undefined,
+    toUtc: typeof query.toUtc === "string" ? query.toUtc : undefined,
+    status: typeof query.status === "string" ? query.status : undefined,
+    model: typeof query.model === "string" ? query.model : undefined,
+    operation: typeof query.operation === "string" ? query.operation : undefined,
+    workflow: typeof query.workflow === "string" ? query.workflow : undefined,
+    limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
+  });
+  if (!parsed.success) {
+    throw new Error("invalid openai request query");
+  }
+  return parsed.data;
+}
+
+function parseOpenAiCostSummaryQuery(query: Record<string, unknown>) {
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : undefined;
+  const parsed = openAiCostSummaryQuerySchema.safeParse({
+    period: typeof query.period === "string" ? query.period : undefined,
+    fromUtc: typeof query.fromUtc === "string" ? query.fromUtc : undefined,
+    toUtc: typeof query.toUtc === "string" ? query.toUtc : undefined,
+    limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
+  });
+  if (!parsed.success) {
+    throw new Error("invalid openai cost query");
   }
   return parsed.data;
 }
@@ -120,6 +154,33 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
       return reply.status(400).send({ error: "invalid query" });
     }
     return store.listHistory(parsed.data.entryId);
+  });
+
+  app.get("/openai/requests", async (request, reply) => {
+    try {
+      const query = parseOpenAiRequestQuery((request.query as Record<string, unknown>) ?? {});
+      return store.listOpenAiRequests(query);
+    } catch {
+      return reply.status(400).send({ error: "invalid query" });
+    }
+  });
+
+  app.get("/openai/costs/summary", async (request, reply) => {
+    try {
+      const query = parseOpenAiCostSummaryQuery((request.query as Record<string, unknown>) ?? {});
+      return store.getOpenAiCostSummary(query);
+    } catch {
+      return reply.status(400).send({ error: "invalid query" });
+    }
+  });
+
+  app.post("/analysis/run", async (request, reply) => {
+    const parsed = runAnalysisInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "invalid body", detail: parsed.error.issues });
+    }
+    const result = await store.runAnalysisForEntries(parsed.data);
+    return reply.status(200).send(result);
   });
 
   return app;

@@ -10,6 +10,13 @@ import { getRepository } from "@/infra/repository-singleton";
 import { newUuidV7 } from "@/shared/utils/uuid";
 import { formatLocal } from "@/shared/utils/time";
 
+const syncStatusLabels: Record<"pending" | "syncing" | "synced" | "failed", string> = {
+  pending: "未同期",
+  syncing: "同期中",
+  synced: "同期済み",
+  failed: "同期失敗",
+};
+
 export function SyncQueueClient() {
   const repo = useMemo(() => getRepository(), []);
   const [running, setRunning] = useState(false);
@@ -86,7 +93,7 @@ export function SyncQueueClient() {
 
         <div className="mt-3 flex items-center gap-2">
           <Button onClick={runSync} disabled={running}>{running ? "同期中..." : "未送信を同期"}</Button>
-          <Badge>pending: {queue.filter((q) => q.status === "pending").length}</Badge>
+          <Badge>未同期: {queue.filter((q) => q.status === "pending").length}</Badge>
         </div>
 
         {message ? <p className="mt-3 rounded-xl2 bg-white/60 px-3 py-2 text-sm">{message}</p> : null}
@@ -96,7 +103,7 @@ export function SyncQueueClient() {
             <Card key={item.id} className="bg-white/70 p-3">
               <p className="text-xs text-ink/60">entry: {item.entryId}</p>
               <div className="mt-1 flex items-center justify-between">
-                <Badge>{syncingIds.has(item.id) ? "syncing" : item.status}</Badge>
+                <Badge>{syncingIds.has(item.id) ? syncStatusLabels.syncing : syncStatusLabels[item.status]}</Badge>
                 <p className="text-xs text-ink/60">{formatLocal(item.createdAtUtc)}</p>
               </div>
               {item.lastError ? <p className="mt-1 text-xs text-[#9a3317]">{item.lastError}</p> : null}

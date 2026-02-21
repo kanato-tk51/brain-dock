@@ -85,4 +85,109 @@ describe("remote repository", () => {
       }),
     );
   });
+
+  it("fetches openai request history and summary", async () => {
+    const repo = new RemoteRepository("http://localhost:8787");
+    const requestRow = {
+      id: "req-1",
+      createdAtUtc: "2026-02-21T10:00:00.000Z",
+      requestStartedAtUtc: "2026-02-21T10:00:00.000Z",
+      requestFinishedAtUtc: "2026-02-21T10:00:01.000Z",
+      status: "ok",
+      environment: "local",
+      endpoint: "/chat/completions",
+      model: "gpt-4.1-mini",
+      operation: "extract_key_facts",
+      workflow: "worker",
+      actor: "worker:extract_key_facts",
+      sourceRefType: "note",
+      inputTokens: 120,
+      cachedInputTokens: 0,
+      outputTokens: 60,
+      reasoningOutputTokens: 0,
+      totalTokens: 180,
+      requestCostUsd: 0.000144,
+      costSource: "estimated",
+    };
+    const summaryRow = {
+      period: "day",
+      totals: {
+        requestCount: 1,
+        okCount: 1,
+        errorCount: 0,
+        inputTokens: 120,
+        cachedInputTokens: 0,
+        outputTokens: 60,
+        totalTokens: 180,
+        totalCostUsd: 0.000144,
+      },
+      buckets: [
+        {
+          period: "day",
+          periodStartUtc: "2026-02-21T00:00:00.000Z",
+          requestCount: 1,
+          okCount: 1,
+          errorCount: 0,
+          inputTokens: 120,
+          cachedInputTokens: 0,
+          outputTokens: 60,
+          totalTokens: 180,
+          totalCostUsd: 0.000144,
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify([requestRow]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(summaryRow), { status: 200 }));
+
+    const requests = await repo.listOpenAiRequests({ limit: 10 });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].model).toBe("gpt-4.1-mini");
+
+    const summary = await repo.getOpenAiCostSummary({ period: "day", limit: 30 });
+    expect(summary.totals.totalCostUsd).toBeCloseTo(0.000144);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8787/openai/requests?limit=10",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8787/openai/costs/summary?period=day&limit=30",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("runs manual analysis for selected entries", async () => {
+    const repo = new RemoteRepository("http://localhost:8787");
+    const payload = {
+      requested: 2,
+      succeeded: 2,
+      failed: 0,
+      extractor: "rules",
+      replaceExisting: true,
+      results: [
+        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d001", status: "ok", extractResults: [] },
+        { entryId: "018ecf2e-8f8a-7b94-a112-2f0a96d1d002", status: "ok", extractResults: [] },
+      ],
+    };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status: 200 }));
+
+    const result = await repo.runAnalysisForEntries({
+      entryIds: [
+        "018ecf2e-8f8a-7b94-a112-2f0a96d1d001",
+        "018ecf2e-8f8a-7b94-a112-2f0a96d1d002",
+      ],
+      extractor: "rules",
+      replaceExisting: true,
+    });
+    expect(result.succeeded).toBe(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8787/analysis/run",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
 });

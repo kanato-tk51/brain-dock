@@ -3,6 +3,12 @@ import type {
   Entry,
   HistoryRecord,
   ListQuery,
+  OpenAiCostSummary,
+  OpenAiCostSummaryQuery,
+  OpenAiRequestQuery,
+  OpenAiRequestRecord,
+  RunAnalysisInput,
+  RunAnalysisResult,
   SearchQuery,
   SearchResult,
   SyncQueueItem,
@@ -141,5 +147,44 @@ export class MemoryStore implements DataStore {
       return rows;
     }
     return rows.filter((row) => row.entryId === entryId);
+  }
+
+  async listOpenAiRequests(_query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]> {
+    return [];
+  }
+
+  async getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary> {
+    return {
+      period: query.period,
+      fromUtc: query.fromUtc,
+      toUtc: query.toUtc,
+      totals: {
+        requestCount: 0,
+        okCount: 0,
+        errorCount: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+      },
+      buckets: [],
+    };
+  }
+
+  async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
+    return {
+      requested: input.entryIds.length,
+      succeeded: 0,
+      failed: input.entryIds.length,
+      extractor: input.extractor,
+      replaceExisting: input.replaceExisting,
+      results: input.entryIds.map((entryId) => ({
+        entryId,
+        status: "error",
+        message: "analysis is available only with postgres backend",
+        extractResults: [],
+      })),
+    };
   }
 }

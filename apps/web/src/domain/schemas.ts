@@ -9,9 +9,15 @@ export const entryTypes = [
 ] as const;
 
 export const sensitivityLevels = ["public", "internal", "sensitive"] as const;
+export const openAiPeriods = ["day", "week", "month"] as const;
+export const openAiRequestStatuses = ["ok", "error", "timeout", "canceled"] as const;
+export const analysisExtractors = ["rules", "llm"] as const;
 
 export const entryTypeSchema = z.enum(entryTypes);
 export const sensitivitySchema = z.enum(sensitivityLevels);
+export const openAiPeriodSchema = z.enum(openAiPeriods);
+export const openAiRequestStatusSchema = z.enum(openAiRequestStatuses);
+export const analysisExtractorSchema = z.enum(analysisExtractors);
 
 export const baseEntrySchema = z.object({
   id: z.string().uuid(),
@@ -108,6 +114,108 @@ export const securityRecordSchema = z.object({
   updatedAtUtc: z.string().datetime({ offset: true }),
 });
 
+export const openAiRequestQuerySchema = z.object({
+  fromUtc: z.string().datetime({ offset: true }).optional(),
+  toUtc: z.string().datetime({ offset: true }).optional(),
+  status: openAiRequestStatusSchema.optional(),
+  model: z.string().min(1).max(100).optional(),
+  operation: z.string().min(1).max(100).optional(),
+  workflow: z.string().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(1000).optional(),
+});
+
+export const openAiCostSummaryQuerySchema = z.object({
+  period: openAiPeriodSchema.default("day"),
+  fromUtc: z.string().datetime({ offset: true }).optional(),
+  toUtc: z.string().datetime({ offset: true }).optional(),
+  limit: z.number().int().min(1).max(366).optional(),
+});
+
+export const openAiRequestRecordSchema = z.object({
+  id: z.string(),
+  createdAtUtc: z.string().datetime({ offset: true }),
+  requestStartedAtUtc: z.string().datetime({ offset: true }),
+  requestFinishedAtUtc: z.string().datetime({ offset: true }).optional(),
+  status: openAiRequestStatusSchema,
+  environment: z.enum(["local", "staging", "production"]),
+  endpoint: z.string(),
+  model: z.string(),
+  operation: z.string().optional(),
+  workflow: z.string().optional(),
+  correlationId: z.string().optional(),
+  actor: z.string(),
+  sourceRefType: z.enum(["none", "capture", "note", "task", "entry", "other"]),
+  sourceRefId: z.string().optional(),
+  openaiRequestId: z.string().optional(),
+  inputTokens: z.number().int().min(0),
+  cachedInputTokens: z.number().int().min(0),
+  outputTokens: z.number().int().min(0),
+  reasoningOutputTokens: z.number().int().min(0),
+  totalTokens: z.number().int().min(0),
+  inputChars: z.number().int().min(0).optional(),
+  outputChars: z.number().int().min(0).optional(),
+  requestCostUsd: z.number().min(0),
+  costSource: z.enum(["estimated", "provider_reported", "manual"]),
+  errorType: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+
+export const openAiCostBucketSchema = z.object({
+  period: openAiPeriodSchema,
+  periodStartUtc: z.string().datetime({ offset: true }),
+  requestCount: z.number().int().min(0),
+  okCount: z.number().int().min(0),
+  errorCount: z.number().int().min(0),
+  inputTokens: z.number().int().min(0),
+  cachedInputTokens: z.number().int().min(0),
+  outputTokens: z.number().int().min(0),
+  totalTokens: z.number().int().min(0),
+  totalCostUsd: z.number().min(0),
+});
+
+export const openAiCostSummarySchema = z.object({
+  period: openAiPeriodSchema,
+  fromUtc: z.string().datetime({ offset: true }).optional(),
+  toUtc: z.string().datetime({ offset: true }).optional(),
+  totals: z.object({
+    requestCount: z.number().int().min(0),
+    okCount: z.number().int().min(0),
+    errorCount: z.number().int().min(0),
+    inputTokens: z.number().int().min(0),
+    cachedInputTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    totalTokens: z.number().int().min(0),
+    totalCostUsd: z.number().min(0),
+  }),
+  buckets: z.array(openAiCostBucketSchema),
+});
+
+export const runAnalysisInputSchema = z.object({
+  entryIds: z.array(z.string().uuid()).min(1).max(200),
+  extractor: analysisExtractorSchema.default("rules"),
+  replaceExisting: z.boolean().default(true),
+});
+
+export const analysisEntryResultSchema = z.object({
+  entryId: z.string().uuid(),
+  captureId: z.string().optional(),
+  noteId: z.string().optional(),
+  taskId: z.string().optional(),
+  status: z.enum(["ok", "skipped", "error"]),
+  message: z.string().optional(),
+  processResult: z.record(z.string(), z.unknown()).optional(),
+  extractResults: z.array(z.record(z.string(), z.unknown())).default([]),
+});
+
+export const runAnalysisResultSchema = z.object({
+  requested: z.number().int().min(0),
+  succeeded: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  extractor: analysisExtractorSchema,
+  replaceExisting: z.boolean(),
+  results: z.array(analysisEntryResultSchema),
+});
+
 export type EntryType = z.infer<typeof entryTypeSchema>;
 export type Sensitivity = z.infer<typeof sensitivitySchema>;
 export type Entry = z.infer<typeof entrySchema>;
@@ -115,6 +223,9 @@ export type Draft = z.infer<typeof draftSchema>;
 export type SyncQueueItem = z.infer<typeof syncQueueSchema>;
 export type HistoryRecord = z.infer<typeof historySchema>;
 export type SecurityRecord = z.infer<typeof securityRecordSchema>;
+export type OpenAiPeriod = z.infer<typeof openAiPeriodSchema>;
+export type OpenAiRequestStatus = z.infer<typeof openAiRequestStatusSchema>;
+export type AnalysisExtractor = z.infer<typeof analysisExtractorSchema>;
 
 export type EntryPayloadMap = {
   journal: z.infer<typeof journalPayloadSchema>;
@@ -151,6 +262,9 @@ export const searchQuerySchema = listQuerySchema.extend({
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type OpenAiRequestQuery = z.infer<typeof openAiRequestQuerySchema>;
+export type OpenAiCostSummaryQuery = z.infer<typeof openAiCostSummaryQuerySchema>;
+export type RunAnalysisInput = z.infer<typeof runAnalysisInputSchema>;
 
 export const searchResultSchema = z.object({
   entry: entrySchema,
@@ -159,6 +273,11 @@ export const searchResultSchema = z.object({
 });
 
 export type SearchResult = z.infer<typeof searchResultSchema>;
+export type OpenAiRequestRecord = z.infer<typeof openAiRequestRecordSchema>;
+export type OpenAiCostBucket = z.infer<typeof openAiCostBucketSchema>;
+export type OpenAiCostSummary = z.infer<typeof openAiCostSummarySchema>;
+export type AnalysisEntryResult = z.infer<typeof analysisEntryResultSchema>;
+export type RunAnalysisResult = z.infer<typeof runAnalysisResultSchema>;
 
 export function validatePayload(type: EntryType, payload: unknown) {
   return payloadByTypeSchema[type].parse(payload);

@@ -3,6 +3,12 @@ import type {
   Entry,
   HistoryRecord,
   ListQuery,
+  OpenAiCostSummary,
+  OpenAiCostSummaryQuery,
+  OpenAiRequestQuery,
+  OpenAiRequestRecord,
+  RunAnalysisInput,
+  RunAnalysisResult,
   SearchQuery,
   SearchResult,
   SyncQueueItem,
@@ -17,5 +23,8 @@ export interface DataStore {
   markSynced(queueId: string, remoteId: string): Promise<void>;
   markSyncFailed(queueId: string, error: string): Promise<void>;
   listHistory(entryId?: string): Promise<HistoryRecord[]>;
+  listOpenAiRequests(query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]>;
+  getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary>;
+  runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult>;
   close?(): Promise<void>;
 }

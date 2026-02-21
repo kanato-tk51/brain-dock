@@ -10,6 +10,12 @@ import {
   historySchema,
   listQuerySchema,
   type ListQuery,
+  type OpenAiCostSummary,
+  type OpenAiCostSummaryQuery,
+  type OpenAiRequestQuery,
+  type OpenAiRequestRecord,
+  type RunAnalysisInput,
+  type RunAnalysisResult,
   searchQuerySchema,
   type SearchQuery,
   type SearchResult,
@@ -307,6 +313,33 @@ export class LocalRepository implements EntryRepository {
       return this.db.history.orderBy("createdAtUtc").reverse().toArray();
     }
     return this.db.history.where("entryId").equals(entryId).reverse().sortBy("createdAtUtc");
+  }
+
+  async listOpenAiRequests(_query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]> {
+    return [];
+  }
+
+  async getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary> {
+    return {
+      period: query.period,
+      fromUtc: query.fromUtc,
+      toUtc: query.toUtc,
+      totals: {
+        requestCount: 0,
+        okCount: 0,
+        errorCount: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+      },
+      buckets: [],
+    };
+  }
+
+  async runAnalysisForEntries(_input: RunAnalysisInput): Promise<RunAnalysisResult> {
+    throw new Error("解析実行はremoteモードで利用してください");
   }
 
   async lockWithPin(pin: string): Promise<void> {

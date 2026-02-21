@@ -5,6 +5,12 @@ import type {
   EntryType,
   HistoryRecord,
   ListQuery,
+  OpenAiCostSummary,
+  OpenAiCostSummaryQuery,
+  OpenAiRequestQuery,
+  OpenAiRequestRecord,
+  RunAnalysisInput,
+  RunAnalysisResult,
   SearchQuery,
   SearchResult,
   SyncQueueItem,
@@ -13,6 +19,12 @@ import {
   entrySchema,
   historySchema,
   listQuerySchema,
+  openAiCostSummaryQuerySchema,
+  openAiCostSummarySchema,
+  openAiRequestQuerySchema,
+  openAiRequestRecordSchema,
+  runAnalysisInputSchema,
+  runAnalysisResultSchema,
   searchQuerySchema,
   searchResultSchema,
   syncQueueSchema,
@@ -148,6 +160,43 @@ export class RemoteRepository implements EntryRepository {
       "GET",
     );
     return raw.map((row) => historySchema.parse(row));
+  }
+
+  async listOpenAiRequests(query?: OpenAiRequestQuery): Promise<OpenAiRequestRecord[]> {
+    const validated = query ? openAiRequestQuerySchema.parse(query) : undefined;
+    const raw = await this.request<unknown[]>(
+      `/openai/requests${encodeQuery({
+        fromUtc: validated?.fromUtc,
+        toUtc: validated?.toUtc,
+        status: validated?.status,
+        model: validated?.model,
+        operation: validated?.operation,
+        workflow: validated?.workflow,
+        limit: validated?.limit,
+      })}`,
+      "GET",
+    );
+    return raw.map((row) => openAiRequestRecordSchema.parse(row));
+  }
+
+  async getOpenAiCostSummary(query: OpenAiCostSummaryQuery): Promise<OpenAiCostSummary> {
+    const validated = openAiCostSummaryQuerySchema.parse(query);
+    const raw = await this.request<unknown>(
+      `/openai/costs/summary${encodeQuery({
+        period: validated.period,
+        fromUtc: validated.fromUtc,
+        toUtc: validated.toUtc,
+        limit: validated.limit,
+      })}`,
+      "GET",
+    );
+    return openAiCostSummarySchema.parse(raw);
+  }
+
+  async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
+    const validated = runAnalysisInputSchema.parse(input);
+    const raw = await this.request<unknown>("/analysis/run", "POST", validated);
+    return runAnalysisResultSchema.parse(raw);
   }
 
   async lockWithPin(pin: string): Promise<void> {

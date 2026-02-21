@@ -96,9 +96,13 @@ pnpm vercel-build-with-env
 ```
 
 主な画面:
-- `/` Dashboard (timeline + search + filters + inline capture)
+- `/` Dashboard (timeline + search + filters + inline capture + OpenAI利用履歴/コスト集計)
 - `/sync`
 - `/lock`
+
+OpenAI利用履歴API（Dashboardで利用）:
+- `GET /openai/requests?fromUtc=&toUtc=&limit=&status=&model=&operation=&workflow=`
+- `GET /openai/costs/summary?period=day|week|month&fromUtc=&toUtc=&limit=`
 
 補足:
 - `/capture` と `/capture/*` は `/` へリダイレクトされます。

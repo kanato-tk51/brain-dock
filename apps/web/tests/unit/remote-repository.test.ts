@@ -50,6 +50,36 @@ describe("remote repository", () => {
     expect(search).toHaveLength(1);
   });
 
+  it("calls typed capture API endpoint", async () => {
+    const repo = new RemoteRepository("http://localhost:8787");
+    const entry = {
+      id: "018ecf2e-8f8a-7b94-a112-2f0a96d1d222",
+      declaredType: "journal",
+      body: "今日は集中できた",
+      tags: [],
+      occurredAtUtc: "2026-02-21T10:00:00.000Z",
+      sensitivity: "internal",
+      createdAtUtc: "2026-02-21T10:00:00.000Z",
+      updatedAtUtc: "2026-02-21T10:00:00.000Z",
+      syncStatus: "pending",
+      payload: { reflection: "今日は集中できた" },
+    };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(entry), { status: 201 }));
+
+    const created = await repo.captureText({
+      declaredType: "journal",
+      text: "今日は集中できた",
+    });
+    expect(created.id).toBe(entry.id);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8787/entries/journal",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ text: "今日は集中できた", occurredAtUtc: undefined }),
+      }),
+    );
+  });
+
   it("marks sync failure via API", async () => {
     const repo = new RemoteRepository("http://localhost:8787");
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));

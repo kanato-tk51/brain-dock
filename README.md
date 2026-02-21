@@ -75,8 +75,9 @@ pnpm api:dev
 
 Repository切替（Web）:
 ```bash
+# デフォルトは remote
 # local | hybrid | remote
-NEXT_PUBLIC_REPOSITORY_MODE=remote
+# NEXT_PUBLIC_REPOSITORY_MODE=remote
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
 ```
 

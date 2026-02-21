@@ -8,11 +8,15 @@ type RepositoryMode = "local" | "remote" | "hybrid";
 let singleton: EntryRepository | null = null;
 
 function resolveMode(): RepositoryMode {
-  const raw = (process.env.NEXT_PUBLIC_REPOSITORY_MODE ?? "hybrid").toLowerCase();
+  if (process.env.NODE_ENV === "test") {
+    return "local";
+  }
+
+  const raw = (process.env.NEXT_PUBLIC_REPOSITORY_MODE ?? "remote").toLowerCase();
   if (raw === "local" || raw === "remote" || raw === "hybrid") {
     return raw;
   }
-  return "hybrid";
+  return "remote";
 }
 
 export function getRepository(): EntryRepository {

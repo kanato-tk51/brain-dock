@@ -37,6 +37,68 @@ describe("brain-dock-api", () => {
     expect(search.json().length).toBeGreaterThan(0);
   });
 
+  it("creates entries via typed text capture route", async () => {
+    const app = await buildApp(store);
+
+    const thought = await app.inject({
+      method: "POST",
+      url: "/entries/thought",
+      payload: {
+        text: "設計の仮説をメモした",
+      },
+    });
+    expect(thought.statusCode).toBe(201);
+    expect(thought.json().declaredType).toBe("thought");
+    expect(thought.json().body).toBe("設計の仮説をメモした");
+    expect(thought.json().payload.note).toBe("設計の仮説をメモした");
+
+    const todo = await app.inject({
+      method: "POST",
+      url: "/entries/todo",
+      payload: {
+        text: "API接続の検証をする",
+      },
+    });
+    expect(todo.statusCode).toBe(201);
+    expect(todo.json().declaredType).toBe("todo");
+    expect(todo.json().payload.details).toBe("API接続の検証をする");
+    expect(todo.json().payload.status).toBe("todo");
+
+    const meeting = await app.inject({
+      method: "POST",
+      url: "/entries/meeting",
+      payload: {
+        text: "次回までに見積もりを出す",
+      },
+    });
+    expect(meeting.statusCode).toBe(201);
+    expect(meeting.json().declaredType).toBe("meeting");
+    expect(meeting.json().payload.context).toBe("次回までに見積もりを出す");
+    expect(meeting.json().payload.notes).toBe("次回までに見積もりを出す");
+
+    const list = await app.inject({ method: "GET", url: "/entries?limit=20" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(3);
+  });
+
+  it("returns 400 on invalid typed text capture request", async () => {
+    const app = await buildApp(store);
+
+    const invalidType = await app.inject({
+      method: "POST",
+      url: "/entries/unknown",
+      payload: { text: "x" },
+    });
+    expect(invalidType.statusCode).toBe(400);
+
+    const invalidBody = await app.inject({
+      method: "POST",
+      url: "/entries/journal",
+      payload: { text: "   " },
+    });
+    expect(invalidBody.statusCode).toBe(400);
+  });
+
   it("sync queue transitions and history are recorded", async () => {
     const app = await buildApp(store);
     const created = await app.inject({

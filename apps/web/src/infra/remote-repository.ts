@@ -1,4 +1,4 @@
-import type { EntryRepository } from "@/domain/repository";
+import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import type {
   CreateEntryInput,
   Draft,
@@ -73,6 +73,18 @@ export class RemoteRepository implements EntryRepository {
       return undefined as T;
     }
     return (await response.json()) as T;
+  }
+
+  async captureText(input: CaptureTextInput): Promise<Entry> {
+    const text = input.text.trim();
+    if (!text) {
+      throw new Error("入力内容は必須です");
+    }
+    const raw = await this.request<unknown>(`/entries/${input.declaredType}`, "POST", {
+      text,
+      occurredAtUtc: input.occurredAtUtc,
+    });
+    return entrySchema.parse(raw);
   }
 
   async createEntry(input: CreateEntryInput): Promise<Entry> {

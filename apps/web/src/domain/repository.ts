@@ -10,7 +10,14 @@ import type {
   SyncQueueItem,
 } from "@/domain/schemas";
 
+export type CaptureTextInput = {
+  declaredType: EntryType;
+  text: string;
+  occurredAtUtc?: string;
+};
+
 export interface EntryRepository {
+  captureText(input: CaptureTextInput): Promise<Entry>;
   createEntry(input: CreateEntryInput): Promise<Entry>;
   updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
   listEntries(query?: ListQuery): Promise<Entry[]>;

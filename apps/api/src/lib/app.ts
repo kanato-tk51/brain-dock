@@ -2,13 +2,17 @@ import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
+  captureTextInputSchema,
   createEntryInputSchema,
+  entryTypeSchema,
   listQuerySchema,
   searchQuerySchema,
+  type CreateEntryInput,
   type EntryType,
   type ListQuery,
 } from "./schemas.js";
 import type { DataStore } from "../services/store.js";
+import { nowUtcIso } from "./utils.js";
 
 function parseListQuery(query: Record<string, unknown>): ListQuery {
   const typesRaw = typeof query.types === "string" ? query.types.split(",").map((v) => v.trim()) : undefined;
@@ -48,6 +52,22 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
       return reply.status(400).send({ error: "invalid body", detail: parsed.error.issues });
     }
     const entry = await store.createEntry(parsed.data);
+    return reply.status(201).send(entry);
+  });
+
+  app.post("/entries/:type", async (request, reply) => {
+    const params = z.object({ type: entryTypeSchema }).safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "invalid type" });
+    }
+
+    const parsed = captureTextInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "invalid body", detail: parsed.error.issues });
+    }
+
+    const entryInput = buildTextCaptureInput(params.data.type, parsed.data.text, parsed.data.occurredAtUtc);
+    const entry = await store.createEntry(entryInput);
     return reply.status(201).send(entry);
   });
 
@@ -136,4 +156,36 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
   });
 
   return app;
+}
+
+function buildTextCaptureInput(type: EntryType, text: string, occurredAtUtc?: string): CreateEntryInput {
+  const normalizedText = text.trim();
+  const payload = buildMinimalPayload(type, normalizedText);
+  return {
+    declaredType: type,
+    body: normalizedText,
+    tags: [],
+    occurredAtUtc: occurredAtUtc ?? nowUtcIso(),
+    sensitivity: "internal",
+    payload,
+  };
+}
+
+function buildMinimalPayload(type: EntryType, text: string): Record<string, unknown> {
+  if (type === "journal") {
+    return { reflection: text };
+  }
+  if (type === "todo") {
+    return { details: text, status: "todo", priority: 3 };
+  }
+  if (type === "learning") {
+    return { takeaway: text };
+  }
+  if (type === "thought") {
+    return { note: text };
+  }
+  if (type === "meeting") {
+    return { context: text, notes: text, decisions: [], actions: [] };
+  }
+  return { item: text };
 }

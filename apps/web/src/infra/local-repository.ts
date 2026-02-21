@@ -1,5 +1,5 @@
 import { resolveLww } from "@/domain/lww";
-import type { EntryRepository } from "@/domain/repository";
+import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import {
   createEntryInputSchema,
   type CreateEntryInput,
@@ -102,6 +102,22 @@ function searchScore(haystack: string, query: string, occurredAtUtc: string): nu
 
 export class LocalRepository implements EntryRepository {
   private db = getDb();
+
+  async captureText(input: CaptureTextInput): Promise<Entry> {
+    const text = input.text.trim();
+    if (!text) {
+      throw new Error("入力内容は必須です");
+    }
+    const occurredAtUtc = input.occurredAtUtc ?? nowUtcIso();
+    return this.createEntry({
+      declaredType: input.declaredType,
+      body: text,
+      tags: [],
+      occurredAtUtc,
+      sensitivity: "internal",
+      payload: buildMinimalPayload(input.declaredType, text),
+    });
+  }
 
   async createEntry(input: CreateEntryInput): Promise<Entry> {
     const parsedInput = createEntryInputSchema.parse(input);
@@ -391,4 +407,23 @@ export class LocalRepository implements EntryRepository {
       updatedAtUtc: nowUtcIso(),
     });
   }
+}
+
+function buildMinimalPayload(type: Entry["declaredType"], text: string): Record<string, unknown> {
+  if (type === "journal") {
+    return { reflection: text };
+  }
+  if (type === "todo") {
+    return { details: text, status: "todo", priority: 3 };
+  }
+  if (type === "learning") {
+    return { takeaway: text };
+  }
+  if (type === "thought") {
+    return { note: text };
+  }
+  if (type === "meeting") {
+    return { context: text, notes: text, decisions: [], actions: [] };
+  }
+  return { item: text };
 }

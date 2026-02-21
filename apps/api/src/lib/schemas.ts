@@ -99,6 +99,11 @@ export const createEntryInputSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+export const captureTextInputSchema = z.object({
+  text: z.string().trim().min(1).max(10000),
+  occurredAtUtc: z.string().datetime({ offset: true }).optional(),
+});
+
 export const listQuerySchema = z.object({
   types: z.array(entryTypeSchema).optional(),
   fromUtc: z.string().datetime({ offset: true }).optional(),
@@ -139,6 +144,7 @@ export const historySchema = z.object({
 export type EntryType = z.infer<typeof entryTypeSchema>;
 export type Entry = z.infer<typeof entrySchema>;
 export type CreateEntryInput = z.infer<typeof createEntryInputSchema>;
+export type CaptureTextInput = z.infer<typeof captureTextInputSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;

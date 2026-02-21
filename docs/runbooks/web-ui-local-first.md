@@ -14,7 +14,9 @@ pnpm dev
 
 RepositoryをAPI接続に切り替える場合:
 ```bash
-export NEXT_PUBLIC_REPOSITORY_MODE=remote
+# デフォルトは remote
+# local-firstで試したい場合だけ local/hybrid を指定
+# export NEXT_PUBLIC_REPOSITORY_MODE=local
 export NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
 pnpm dev
 ```

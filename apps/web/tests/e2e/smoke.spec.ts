@@ -1,11 +1,16 @@
 import { test, expect } from "@playwright/test";
 
-test("dashboard and capture pages load", async ({ page }) => {
+test("dashboard shows inline capture form", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Timeline Dashboard")).toBeVisible();
+  await expect(page.getByLabel("入力タイプ")).toBeVisible();
+  await expect(page.getByLabel("入力内容")).toBeVisible();
+  await expect(page.getByLabel("Sensitivity")).toHaveCount(0);
+  await expect(page.getByText("タイトル")).toHaveCount(0);
 
-  await page.goto("/capture/journal");
-  await expect(page.getByText("Journal")).toBeVisible();
+  await page.goto("/capture");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByLabel("入力タイプ")).toBeVisible();
 
   await page.goto("/sync");
   await expect(page.getByText("Manual Sync Queue")).toBeVisible();

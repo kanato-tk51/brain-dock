@@ -28,7 +28,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <span>Brain Dock</span>
                 </Link>
                 <nav className="flex items-center gap-3 text-sm">
-                  <Link href="/capture/journal" className="hover:underline">capture</Link>
                   <Link href="/sync" className="hover:underline">sync</Link>
                   <Link href="/lock" className="hover:underline">lock</Link>
                 </nav>

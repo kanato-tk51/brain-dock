@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { EntryType } from "@/domain/schemas";
 import { entryTypes } from "@/domain/schemas";
+import { SimpleCaptureForm } from "@/features/capture/SimpleCaptureForm";
 import { getRepository } from "@/infra/repository-singleton";
 import { useUiStore } from "@/shared/state/ui-store";
 import { formatLocal, toLocalInputValue, toUtcIso } from "@/shared/utils/time";
@@ -68,10 +69,7 @@ export function DashboardClient() {
             <div>
               <h1 className="text-2xl font-bold">Timeline Dashboard</h1>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/sync"><Button variant="ghost">Sync Queue</Button></Link>
-              <Link href="/capture/journal"><Button>新規入力</Button></Link>
-            </div>
+            <Link href="/sync"><Button variant="ghost">Sync Queue</Button></Link>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -149,17 +147,19 @@ export function DashboardClient() {
           <p className="mt-2 text-xs text-ink/60">{"exact > prefix > contains + recency boost"}</p>
         </Card>
 
-        <Card className="p-5">
-          <h2 className="text-base font-bold">Capture tabs</h2>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {entryTypes.map((type) => (
-              <Link key={type} href={`/capture/${type}`} className="rounded-xl2 border border-[#d8d2c7] bg-white/70 px-3 py-2 text-sm hover:bg-white">
-                {labels[type]}
-              </Link>
-            ))}
-          </div>
+        <SimpleCaptureForm
+          initialType="journal"
+          embedded
+          onSaved={async () => {
+            await entriesQuery.refetch();
+            if (searchText.trim()) {
+              await searchQuery.refetch();
+            }
+          }}
+        />
 
-          <h3 className="mt-4 text-sm font-semibold">Date range</h3>
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold">Date range</h3>
           <div className="mt-2 grid grid-cols-1 gap-2">
             <input
               type="datetime-local"

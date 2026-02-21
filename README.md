@@ -21,10 +21,8 @@
 - データモデル: `docs/architecture/data-model.md`
 - 事実抽出設計: `docs/architecture/fact-schema-and-extraction.md`
 - 置換性/性能方針: `docs/architecture/worker-portability-and-performance.md`
-- MVP(1〜2週間): `docs/mvp/mvp-1-2-weeks.md`
 - 4.x統合計画: `docs/plans/full-4x-integration.md`
 - GitHub運用: `docs/operations/github-operating-model.md`
-- 今日のTODO: `docs/next-steps/today-start.md`
 
 ## 実装済みジョブ
 - `captures_raw` へのクイック入力:
@@ -124,7 +122,7 @@ brain-dock/
 │   ├── mvp/
 │   ├── operations/
 │   ├── plans/
-│   └── next-steps/
+│   └── runbooks/
 ├── design/                  # ADR・設計補助資料
 │   └── adr/
 ├── notes/                   # 生メモ・プロンプト保存

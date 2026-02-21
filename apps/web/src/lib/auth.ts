@@ -1,8 +1,7 @@
-import { compare } from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { authenticator } from "otplib";
 import { authBypassed, authRequired, getAllowedEmail } from "@/lib/auth-constants";
+import { verifyEmailOtpChallenge } from "@/lib/email-otp";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -17,9 +16,9 @@ function requiredEnv(name: string): string {
 
 function parseCredentials(input: Record<string, unknown> | undefined) {
   const email = String(input?.email ?? "").trim().toLowerCase();
-  const password = String(input?.password ?? "");
   const otp = String(input?.otp ?? "").trim();
-  return { email, password, otp };
+  const challengeToken = String(input?.challengeToken ?? "").trim();
+  return { email, otp, challengeToken };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -36,8 +35,8 @@ export const authOptions: NextAuthOptions = {
       name: "Brain Dock Login",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
         otp: { label: "OTP", type: "text" },
+        challengeToken: { label: "Challenge Token", type: "text" },
       },
       async authorize(credentials) {
         if (authBypassed()) {
@@ -48,21 +47,19 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        const { email, password, otp } = parseCredentials(credentials);
+        const { email, otp, challengeToken } = parseCredentials(credentials);
         const allowedEmail = getAllowedEmail();
-        if (!email || !password || !otp || email !== allowedEmail) {
+        if (!email || !otp || !challengeToken || email !== allowedEmail) {
           return null;
         }
 
-        const passwordHash = requiredEnv("BRAIN_DOCK_PASSWORD_BCRYPT");
-        const totpSecret = requiredEnv("BRAIN_DOCK_TOTP_SECRET");
-
-        const passwordOk = await compare(password, passwordHash);
-        if (!passwordOk) {
-          return null;
-        }
-        const otpOk = authenticator.check(otp, totpSecret);
-        if (!otpOk) {
+        const validOtp = verifyEmailOtpChallenge({
+          email,
+          otp,
+          challengeToken,
+          secret: requiredEnv("NEXTAUTH_SECRET"),
+        });
+        if (!validOtp) {
           return null;
         }
 
@@ -96,4 +93,3 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
-

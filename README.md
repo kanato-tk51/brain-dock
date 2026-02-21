@@ -25,6 +25,10 @@
 - GitHub運用: `docs/operations/github-operating-model.md`
 - 今日のTODO: `docs/next-steps/today-start.md`
 
+## 実装済みジョブ
+- `notes/tasks -> key_facts` 抽出:
+  `python3 apps/worker/extract_key_facts.py --db ./brain_dock.db --source all --replace-existing`
+
 ## リポジトリ構成
 - `apps/`: 実アプリ（CLI / API / UI）
 - `packages/`: 共通ライブラリ（parser, ranking, policy等）

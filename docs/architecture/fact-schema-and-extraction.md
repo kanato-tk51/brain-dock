@@ -26,6 +26,25 @@
 5. `confidence < 0.70` は保留キューへ
 6. `confidence >= 0.70` のみ `key_facts` に保存
 
+## 実装済みジョブ
+- ファイル: `apps/worker/extract_key_facts.py`
+- 方式: ルールベース抽出 + スキーマバリデーション + `confidence` 閾値保存
+
+### 実行例
+```bash
+python3 apps/worker/extract_key_facts.py \
+  --db ./brain_dock.db \
+  --source all \
+  --replace-existing
+```
+
+### 主要オプション
+- `--source all|notes|tasks`
+- `--all-rows`（変更分のみではなく全件再抽出）
+- `--replace-existing`（既存factをsoft-deleteして再生成）
+- `--min-confidence 0.70`
+- `--dry-run`
+
 ## 抽出プロンプトのルール
 - 推測で埋めない（不明はnull）
 - 1ファクト1意味に分割する

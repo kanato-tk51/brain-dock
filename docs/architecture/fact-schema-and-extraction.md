@@ -1,65 +1,82 @@
-# Fact-First 形式と抽出フロー（LLM一本化）
+# Fact-Centric v2（LLM主導 / Me中心）
 
 ## 目的
-Brain Dock を「忘れた事実を思い出すための外部記憶」として運用するため、
-原文を保持しつつ `claim + evidence` を正本にする。
+Brain Dock の記憶正本を「生テキスト単体」から「私中心の claim」に移し、後から高速に参照できる状態を作る。  
+同時に、意味保全のために原文と根拠スパンを必ず保持する。
 
-## 正本データモデル
-- `fact_documents`
-  - `entry/capture` の不変スナップショット
-  - `raw_text`, `pii_score`, `redaction_state` を保持
-- `fact_claims`
-  - 1行1意味の事実
-  - `subject_text`, `predicate`, `object_text`
-  - `modality`（fact/plan/hypothesis/request/feeling）
-  - `polarity`（affirm/negate）
-  - `certainty`（0.0-1.0）
-- `fact_evidence_spans`
-  - claim の根拠断片と位置
-  - `char_start`, `char_end`, `excerpt`
-- `fact_entities`, `fact_entity_aliases`
-  - 人物/場所/概念の正規化
-- `fact_claim_links`
-  - claim間関係（supports / contradicts / caused_by など）
-- `fact_extraction_jobs`, `fact_extraction_job_items`
-  - 手動解析トリガーの実行履歴・再試行管理
+## v2の正本レイヤー
+1. `fact_documents`
+- 入力原文の不変保存
+- `raw_text`, `normalized_text`, `language`, `token_count`, `analysis_state`, `last_analyzed_at`
 
-## 抽出フロー（現行）
-1. UI入力を `app_entries + captures_raw` に保存
-2. `fact_documents` を生成/更新
+2. `fact_claims`
+- 参照/検索の主対象
+- `subject_text`, `predicate`
+- `object_text_raw`（原文寄り）
+- `object_text_canonical`（単独で意味が通る補完済み）
+- `me_role`, `modality`, `polarity`, `certainty`
+- `quality_score`, `quality_flags`
+- `status`, `supersedes_claim_id`
+
+3. `fact_evidence_spans`
+- claim根拠の原文断片 + 位置（offset）
+
+4. `fact_claim_dimensions`
+- 高速検索用の軸（person/place/activity/emotion/health/topic/...）
+
+5. `fact_rollups`
+- 日/週/月などの圧縮記憶（再構成可能）
+
+6. `fact_extractions`
+- 1ドキュメント1抽出試行の監査ログ
+- model, reasoning_effort, status, token/cost, error情報
+
+7. `fact_analysis_artifacts`
+- LLMトレースは最小保持（本文は保存しない）
+- hash + metadataのみ
+
+8. `fact_claim_feedback`
+- UI手動改訂/retractの監査履歴
+
+## 抽出パイプライン（v2）
+1. 入力保存 (`app_entries`)
+2. `fact_documents` 生成/更新
 3. PII判定
-  - high: 送信ブロック（job_item = blocked）
-  - medium: 長さ維持マスクで送信
-  - low: 原文送信
-4. ChatGPT Structured Output で `claims/entities/links` を取得
-5. DB保存
-  - `fact_claims`
-  - `fact_evidence_spans`
-  - `fact_entities` / `fact_entity_aliases`
-  - `fact_claim_links`
-6. 失敗時は rules へフォールバックせず `queued` へ退避
+- high-risk: OpenAI送信ブロック (`blocked`)
+- medium-risk: マスク送信
+- low-risk: 通常送信
+4. LLM Structured Output 抽出（`claim_schema_v2.py`）
+5. 品質ゲート
+- evidence欠落/意味不成立/object短すぎ を reject
+6. 保存
+- claims + evidence + dimensions + extractionログ
+7. 失敗時
+- フォールバック抽出は行わず `queued_retry` で記録
 
-## 実装ワーカー
+## API契約（v2）
+- 解析実行: `POST /analysis/jobs`
+- ジョブ参照: `GET /analysis/jobs`, `GET /analysis/jobs/:id`
+- モデル取得: `GET /analysis/models`
+- claim探索: `GET /facts/claims`, `GET /facts/claims/:id`, `GET /facts/by-entry/:entryId`
+- 手動修正: `POST /facts/claims/:id/revise`, `POST /facts/claims/:id/retract`
+- 圧縮サマリ: `GET /rollups`, `POST /rollups/rebuild`
+- 互換: `POST /analysis/run` と `GET /facts/search` は同処理へ委譲
+
+## Web構成（v2）
+- `/` ホーム: 入力・一覧・解析実行
+- `/analysis-history`: ジョブ履歴 + claim展開 + 再試行
+- `/facts`: claim探索 + rollup表示
+- `/facts/:claimId`: claim詳細 + 手動改訂/retract
+- `/insights`: OpenAI利用量/コスト集計
+
+## 実装ファイル
 - `apps/worker/extract_claims_llm.py`
-- `apps/worker/claim_schema.py`
+- `apps/worker/claim_schema_v2.py`
 - `apps/worker/redaction.py`
-
-### 実行例
-```bash
-python3 apps/worker/extract_claims_llm.py \
-  --backend neon \
-  --entry-id <entry-id> \
-  --replace-existing
-```
 
 ## OpenAI利用ログ
 - テーブル: `public.openai_api_requests`
-- 記録内容:
-  - リクエスト時刻/モデル/トークン/推定コスト
-  - `source_ref_type=entry`, `source_ref_id=<entry_id>`
-  - エラー種別/エラーメッセージ
-
-## 参照優先順位
-1. `fact_claims`（構造化事実）
-2. `fact_evidence_spans`（根拠）
-3. `fact_documents.raw_text`（最終確認）
+- 主なキー:
+  - `source_ref_type = entry`
+  - `source_ref_id = <entry_id>`
+  - token/cost/error を1リクエスト単位で保持

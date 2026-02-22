@@ -12,7 +12,6 @@ import { SimpleCaptureForm } from "@/features/capture/SimpleCaptureForm";
 import { getRepository } from "@/infra/repository-singleton";
 import { useUiStore } from "@/shared/state/ui-store";
 import { formatLocal, toLocalInputValue, toUtcIso } from "@/shared/utils/time";
-import { newUuidV7 } from "@/shared/utils/uuid";
 
 const labels: Record<EntryType, string> = {
   journal: "日記",
@@ -22,13 +21,21 @@ const labels: Record<EntryType, string> = {
   meeting: "会議",
 };
 
+const analysisStateLabels = {
+  not_requested: "未実行",
+  queued: "要再試行",
+  running: "実行中",
+  succeeded: "成功",
+  failed: "失敗",
+  blocked: "機密ブロック",
+} as const;
+
 const analysisActionButtonClassName =
   "rounded-full border border-[#d8d2c7] bg-white px-2.5 py-1 text-xs font-medium text-ink hover:bg-[#f6f6f4]";
 
 const analyzedBadgeClassName =
   "rounded-full border border-[#8ecf9c] bg-[#e8f7ec] px-2.5 py-1 text-xs font-medium text-[#1c6a2b]";
 
-const availableAnalysisModels = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"] as const;
 const reasoningEffortLabels: Record<AnalysisReasoningEffort, string> = {
   none: "なし",
   low: "低",
@@ -46,7 +53,7 @@ export function DashboardClient() {
   const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
-  const [analysisModel, setAnalysisModel] = useState<(typeof availableAnalysisModels)[number]>("gpt-4.1-mini");
+  const [analysisModel, setAnalysisModel] = useState<string>("gpt-4.1-mini");
   const [analysisReasoningEffort, setAnalysisReasoningEffort] = useState<AnalysisReasoningEffort>("none");
 
   useEffect(() => {
@@ -54,6 +61,27 @@ export function DashboardClient() {
     setToLocal(filters.toUtc ? toLocalInputValue(filters.toUtc) : "");
     setTagsInput(filters.tags.join(","));
   }, [filters.fromUtc, filters.toUtc, filters.tags]);
+
+  const modelsQuery = useQuery({
+    queryKey: ["analysis-models"],
+    queryFn: () => repo.getAnalysisModels(),
+  });
+
+  useEffect(() => {
+    const models = modelsQuery.data ?? [];
+    if (models.length === 0) {
+      return;
+    }
+    if (!models.some((model) => model.id === analysisModel)) {
+      setAnalysisModel(models[0].id);
+      setAnalysisReasoningEffort(models[0].defaultReasoningEffort);
+      return;
+    }
+    const selected = models.find((model) => model.id === analysisModel);
+    if (selected && !selected.supportsReasoningEffort && analysisReasoningEffort !== "none") {
+      setAnalysisReasoningEffort("none");
+    }
+  }, [analysisModel, analysisReasoningEffort, modelsQuery.data]);
 
   const entriesQuery = useQuery({
     queryKey: ["entries", filters],
@@ -73,12 +101,12 @@ export function DashboardClient() {
     const list = entriesQuery.data ?? [];
     const today = new Date().toISOString().slice(0, 10);
     const todayCount = list.filter((e) => e.occurredAtUtc.startsWith(today)).length;
-    const pendingSync = list.filter((e) => e.syncStatus === "pending").length;
+    const readyToAnalyze = list.filter((e) => e.analysisState === "not_requested" || e.analysisState === "failed").length;
     const byType = Object.fromEntries(entryTypes.map((t) => [t, list.filter((e) => e.declaredType === t).length])) as Record<
       EntryType,
       number
     >;
-    return { todayCount, pendingSync, byType };
+    return { todayCount, readyToAnalyze, byType };
   }, [entriesQuery.data]);
 
   async function runAnalysis(entryIds: string[]) {
@@ -87,38 +115,19 @@ export function DashboardClient() {
     }
     setAnalysisRunning(true);
     setAnalysisNotice(null);
-    const targetEntryIds = new Set(entryIds);
-    let summaryMessage = "";
     try {
+      const selected = (modelsQuery.data ?? []).find((model) => model.id === analysisModel);
+      const effectiveReasoning = selected?.supportsReasoningEffort ? analysisReasoningEffort : "none";
       const result = await repo.runAnalysisForEntries({
         entryIds,
         replaceExisting: true,
         llmModel: analysisModel,
-        reasoningEffort: analysisReasoningEffort,
+        reasoningEffort: effectiveReasoning,
+        priority: "normal",
       });
-      summaryMessage = `解析完了 (job: ${result.jobId}): 成功 ${result.succeeded}件 / 失敗 ${result.failed}件 / model: ${analysisModel} / reasoning: ${analysisReasoningEffort}`;
-
-      const queue = await repo.listSyncQueue();
-      const pendingTargets = queue.filter((item) => item.status === "pending" && targetEntryIds.has(item.entryId));
-      let synced = 0;
-      let syncFailed = 0;
-      for (const item of pendingTargets) {
-        try {
-          await repo.markSynced(item.id, `remote-${newUuidV7()}`);
-          synced += 1;
-        } catch (error) {
-          syncFailed += 1;
-          const reason = error instanceof Error ? error.message : "sync error";
-          try {
-            await repo.markSyncFailed(item.id, reason);
-          } catch {
-            // keep loop alive
-          }
-        }
-      }
-
-      summaryMessage = `${summaryMessage} / 同期: 成功 ${synced}件 / 失敗 ${syncFailed}件`;
-      setAnalysisNotice(summaryMessage);
+      setAnalysisNotice(
+        `解析完了 (job: ${result.jobId}): 成功 ${result.succeeded}件 / 失敗 ${result.failed}件 / model: ${analysisModel} / reasoning: ${effectiveReasoning}`,
+      );
       await entriesQuery.refetch();
       if (searchText.trim()) {
         await searchQuery.refetch();
@@ -139,6 +148,7 @@ export function DashboardClient() {
               <h1 className="text-2xl font-bold">タイムライン</h1>
             </div>
             <div className="flex items-center gap-2">
+              <Link href="/facts"><Button variant="ghost">ファクト</Button></Link>
               <Link href="/analysis-history"><Button variant="ghost">解析履歴</Button></Link>
               <Link href="/insights"><Button variant="ghost">料金</Button></Link>
             </div>
@@ -150,8 +160,8 @@ export function DashboardClient() {
               <p className="text-2xl font-bold">{stats.todayCount}</p>
             </Card>
             <Card className="bg-white/65 p-3">
-              <p className="text-xs text-ink/60">未同期</p>
-              <p className="text-2xl font-bold">{stats.pendingSync}</p>
+              <p className="text-xs text-ink/60">解析待ち</p>
+              <p className="text-2xl font-bold">{stats.readyToAnalyze}</p>
             </Card>
             <Card className="bg-white/65 p-3">
               <p className="text-xs text-ink/60">タイプ内訳</p>
@@ -173,11 +183,11 @@ export function DashboardClient() {
                 <select
                   id="analysis-model"
                   value={analysisModel}
-                  onChange={(e) => setAnalysisModel(e.target.value as (typeof availableAnalysisModels)[number])}
+                  onChange={(e) => setAnalysisModel(e.target.value)}
                   className="bg-transparent text-xs text-ink focus:outline-none"
                 >
-                  {availableAnalysisModels.map((model) => (
-                    <option key={model} value={model}>{model}</option>
+                  {(modelsQuery.data ?? []).map((model) => (
+                    <option key={model.id} value={model.id}>{model.id}</option>
                   ))}
                 </select>
               </div>
@@ -259,6 +269,7 @@ export function DashboardClient() {
                         }}
                       />
                       <p className="text-xs text-ink/60">{labels[entry.declaredType]} / {formatLocal(entry.occurredAtUtc)}</p>
+                      <span className="text-[10px] text-ink/60">{analysisStateLabels[entry.analysisState as AnalysisStatus] ?? "未実行"}</span>
                     </div>
                     <p className="mt-1 text-sm text-ink/85 line-clamp-3">{entry.body || JSON.stringify(entry.payload)}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -266,7 +277,7 @@ export function DashboardClient() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {entry.analysisStatus === "succeeded" ? (
+                    {entry.analysisState === "succeeded" ? (
                       <span className={analyzedBadgeClassName}>解析済</span>
                     ) : null}
                     <Button
@@ -355,3 +366,5 @@ export function DashboardClient() {
     </div>
   );
 }
+
+type AnalysisStatus = keyof typeof analysisStateLabels;

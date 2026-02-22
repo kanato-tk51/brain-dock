@@ -6,6 +6,7 @@ Extract fact-first claims from fact_documents using ChatGPT structured output.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -15,7 +16,7 @@ from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from claim_schema import (
+from claim_schema_v2 import (
     SUPPORTED_PREDICATES,
     ParsedClaim,
     ParsedClaimLink,
@@ -52,7 +53,6 @@ MODEL_PRICING_PER_1M_USD: dict[str, dict[str, float]] = {
 }
 
 ME_REFERENCE_RE = re.compile(r"^(?:me|i|myself|私|わたし|僕|ぼく|俺|おれ|自分)$", re.IGNORECASE)
-ME_WORD_RE = re.compile(r"(?:\b(?:i|me|my|myself)\b|私|わたし|僕|ぼく|俺|おれ|自分)", re.IGNORECASE)
 DECISION_PREDICATES = {"chose", "ended", "decided"}
 EVENT_PREDICATES = {"happened", "experienced", "was_affected_by"}
 CAUSE_HINT_RE = re.compile(r"(because|due to|ので|から|ため|せいで)", re.IGNORECASE)
@@ -69,6 +69,16 @@ TOPIC_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 CJK_RE = re.compile(r"[ぁ-んァ-ヶ一-龠]")
+SENTENCE_SPLIT_RE = re.compile(r"[。！？]\s*")
+ACTION_CLAUSE_SPLIT_RE = re.compile(r"[、]\s*")
+ACTION_HINT_RE = re.compile(
+    r"(した|して|行っ|帰宅|作業|トレ|運動|洗濯|寝|指示|出し|やっ|会議|勉強|読書|書い|送っ|連絡|準備|買っ)",
+    re.IGNORECASE,
+)
+PLAN_HINT_RE = re.compile(
+    r"(しよう|する予定|つもり|したい|忘れないよう|しなければ|べき|予定|to do|todo)",
+    re.IGNORECASE,
+)
 
 PREDICATE_ALIAS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(went_to|go|visit|行った|行く|向かった|訪れた)", re.IGNORECASE), "went_to"),
@@ -168,27 +178,17 @@ def _canonicalize_predicate(predicate: str, object_text: str = "") -> str:
     return "mentions"
 
 
-def _is_me_related_claim(claim: ParsedClaim) -> bool:
-    if _normalize_subject_text(claim.subject_text) == "me":
-        return True
-    if ME_WORD_RE.search(claim.object_text):
-        return True
-    if claim.subject_entity_name and ME_WORD_RE.search(claim.subject_entity_name):
-        return True
-    if claim.object_entity_name and ME_WORD_RE.search(claim.object_entity_name):
-        return True
-    return False
-
-
 def _ensure_single_evidence(claim: ParsedClaim, raw_text: str) -> ParsedClaim:
     if claim.evidence_spans:
         return claim
-    excerpt = raw_text.strip()[:200] or claim.object_text[:200]
+    excerpt = raw_text.strip()[:200] or claim.object_text_canonical[:200]
     fallback_span = ParsedEvidenceSpan(char_start=None, char_end=None, excerpt=excerpt or "evidence unavailable")
     return ParsedClaim(
         subject_text=claim.subject_text,
         predicate=claim.predicate,
-        object_text=claim.object_text,
+        object_text_raw=claim.object_text_raw,
+        object_text_canonical=claim.object_text_canonical,
+        me_role=claim.me_role,
         modality=claim.modality,
         polarity=claim.polarity,
         certainty=claim.certainty,
@@ -196,6 +196,7 @@ def _ensure_single_evidence(claim: ParsedClaim, raw_text: str) -> ParsedClaim:
         time_end_utc=claim.time_end_utc,
         subject_entity_name=claim.subject_entity_name,
         object_entity_name=claim.object_entity_name,
+        dimensions=claim.dimensions,
         evidence_spans=[fallback_span],
     )
 
@@ -206,7 +207,9 @@ def _make_fallback_me_claim(raw_text: str, occurred_at_utc: str | None) -> Parse
     return ParsedClaim(
         subject_text="me",
         predicate="experienced",
-        object_text=(snippet[:1000] if snippet else "entry recorded"),
+        object_text_raw=(snippet[:1000] if snippet else "entry recorded"),
+        object_text_canonical=(snippet[:1000] if snippet else "entry recorded"),
+        me_role="experiencer",
         modality="fact",
         polarity="affirm",
         certainty=0.5,
@@ -214,6 +217,7 @@ def _make_fallback_me_claim(raw_text: str, occurred_at_utc: str | None) -> Parse
         time_end_utc=None,
         subject_entity_name=None,
         object_entity_name=None,
+        dimensions=[],
         evidence_spans=[ParsedEvidenceSpan(char_start=None, char_end=None, excerpt=excerpt)],
     )
 
@@ -282,7 +286,7 @@ def _apply_context_completion(claims: list[ParsedClaim]) -> list[ParsedClaim]:
     out: list[ParsedClaim] = []
 
     for claim in claims:
-        object_text = claim.object_text.strip()
+        object_text = claim.object_text_canonical.strip()
         current_topic = _extract_context_topic(object_text)
         if current_topic:
             latest_topic = current_topic
@@ -295,7 +299,9 @@ def _apply_context_completion(claims: list[ParsedClaim]) -> list[ParsedClaim]:
                 ParsedClaim(
                     subject_text=claim.subject_text,
                     predicate=claim.predicate,
-                    object_text=enriched[:1000],
+                    object_text_raw=claim.object_text_raw,
+                    object_text_canonical=enriched[:1000],
+                    me_role=claim.me_role,
                     modality=claim.modality,
                     polarity=claim.polarity,
                     certainty=claim.certainty,
@@ -303,6 +309,7 @@ def _apply_context_completion(claims: list[ParsedClaim]) -> list[ParsedClaim]:
                     time_end_utc=claim.time_end_utc,
                     subject_entity_name=claim.subject_entity_name,
                     object_entity_name=claim.object_entity_name,
+                    dimensions=claim.dimensions,
                     evidence_spans=claim.evidence_spans,
                 )
             )
@@ -311,6 +318,37 @@ def _apply_context_completion(claims: list[ParsedClaim]) -> list[ParsedClaim]:
         out.append(claim)
 
     return out
+
+
+def _is_quality_ok(claim: ParsedClaim) -> bool:
+    canonical = (claim.object_text_canonical or "").strip()
+    return bool(canonical)
+
+
+def apply_quality_gate(parsed: ParsedClaimsOutput) -> tuple[ParsedClaimsOutput, list[str]]:
+    quality_flags: list[str] = []
+    filtered_claims: list[ParsedClaim] = []
+    index_map: dict[int, int] = {}
+    for idx, claim in enumerate(parsed.claims):
+        if _is_quality_ok(claim):
+            index_map[idx] = len(filtered_claims)
+            filtered_claims.append(claim)
+            continue
+        quality_flags.append(f"claim_rejected:{idx}")
+
+    filtered_links: list[ParsedClaimLink] = []
+    for link in parsed.links:
+        if link.from_claim_index in index_map and link.to_claim_index in index_map:
+            filtered_links.append(
+                ParsedClaimLink(
+                    from_claim_index=index_map[link.from_claim_index],
+                    to_claim_index=index_map[link.to_claim_index],
+                    relation_type=link.relation_type,
+                    confidence=link.confidence,
+                )
+            )
+
+    return ParsedClaimsOutput(claims=filtered_claims, entities=parsed.entities, links=filtered_links), quality_flags
 
 
 def normalize_to_me_centric_claims(
@@ -323,16 +361,22 @@ def normalize_to_me_centric_claims(
     normalized_claims: list[ParsedClaim] = []
     for claim in parsed.claims:
         subject_text = _normalize_subject_text(claim.subject_text)
-        predicate = _canonicalize_predicate(claim.predicate, claim.object_text)
+        raw_object = (claim.object_text_raw or claim.object_text_canonical or claim.object_text)[:1000]
+        predicate = _canonicalize_predicate(claim.predicate, raw_object)
         normalized_object = _restore_object_text_from_evidence_if_translated(
-            claim.object_text[:1000],
+            (claim.object_text_canonical or raw_object)[:1000],
             raw_text=raw_text,
             evidence_spans=claim.evidence_spans,
         )
+        me_role = claim.me_role
+        if subject_text == "me" and me_role == "none":
+            me_role = "experiencer"
         normalized = ParsedClaim(
             subject_text=subject_text,
             predicate=predicate,
-            object_text=normalized_object,
+            object_text_raw=raw_object,
+            object_text_canonical=normalized_object,
+            me_role=me_role,
             modality=claim.modality,
             polarity=claim.polarity,
             certainty=claim.certainty,
@@ -340,50 +384,24 @@ def normalize_to_me_centric_claims(
             time_end_utc=claim.time_end_utc,
             subject_entity_name=claim.subject_entity_name,
             object_entity_name=claim.object_entity_name,
+            dimensions=claim.dimensions,
             evidence_spans=claim.evidence_spans,
         )
         normalized_claims.append(_ensure_single_evidence(normalized, raw_text))
 
-    me_related_indexes = {idx for idx, claim in enumerate(normalized_claims) if _is_me_related_claim(claim)}
-    linked_to_me_indexes: set[int] = set()
-    for link in parsed.links:
-        if link.from_claim_index in me_related_indexes:
-            linked_to_me_indexes.add(link.to_claim_index)
-        if link.to_claim_index in me_related_indexes:
-            linked_to_me_indexes.add(link.from_claim_index)
+    filtered_claims: list[ParsedClaim] = list(normalized_claims)
+    index_map: dict[int, int] = {idx: idx for idx in range(len(filtered_claims))}
 
-    keep_indexes = me_related_indexes | linked_to_me_indexes
-    decision_related_indexes = {
-        idx for idx, claim in enumerate(normalized_claims) if idx in keep_indexes and claim.predicate in DECISION_PREDICATES
-    }
-    if decision_related_indexes:
-        for idx, claim in enumerate(normalized_claims):
-            if idx in keep_indexes:
-                continue
-            if claim.predicate in EVENT_PREDICATES or RAIN_HINT_RE.search(claim.object_text):
-                keep_indexes.add(idx)
-                break
-
-    if not keep_indexes:
-        keep_indexes = set()
-
-    filtered_claims: list[ParsedClaim] = []
-    index_map: dict[int, int] = {}
-    for idx, claim in enumerate(normalized_claims):
-        if idx not in keep_indexes:
-            continue
-        new_idx = len(filtered_claims)
-        index_map[idx] = new_idx
-        filtered_claims.append(claim)
-
-    if not filtered_claims and declared_type in {"journal", "todo", "learning", "thought", "meeting"}:
-        filtered_claims = [_make_fallback_me_claim(raw_text, occurred_at_utc)]
-        index_map = {0: 0}
-    elif not filtered_claims:
+    if not filtered_claims:
         filtered_claims = [_make_fallback_me_claim(raw_text, occurred_at_utc)]
         index_map = {0: 0}
 
     filtered_claims = _apply_context_completion(filtered_claims)
+    filtered_claims = _augment_missing_action_claims(
+        filtered_claims,
+        raw_text=raw_text,
+        occurred_at_utc=occurred_at_utc,
+    )
 
     filtered_links: list[ParsedClaimLink] = []
     for link in parsed.links:
@@ -407,7 +425,7 @@ def normalize_to_me_centric_claims(
         for idx, claim in enumerate(filtered_claims):
             if idx in decision_indexes:
                 continue
-            if claim.predicate in EVENT_PREDICATES or RAIN_HINT_RE.search(claim.object_text):
+            if claim.predicate in EVENT_PREDICATES or RAIN_HINT_RE.search(claim.object_text_canonical):
                 cause_candidate_idx = idx
                 break
         if cause_candidate_idx >= 0:
@@ -427,7 +445,9 @@ def normalize_to_me_centric_claims(
                 ParsedClaim(
                     subject_text="context",
                     predicate="happened",
-                    object_text=(raw_text[:180] if raw_text else "context event happened"),
+                    object_text_raw=(raw_text[:180] if raw_text else "context event happened"),
+                    object_text_canonical=(raw_text[:180] if raw_text else "context event happened"),
+                    me_role="none",
                     modality="fact",
                     polarity="affirm",
                     certainty=0.7,
@@ -435,6 +455,7 @@ def normalize_to_me_centric_claims(
                     time_end_utc=None,
                     subject_entity_name=None,
                     object_entity_name=None,
+                    dimensions=[],
                     evidence_spans=[
                         ParsedEvidenceSpan(
                             char_start=None,
@@ -460,6 +481,95 @@ def normalize_to_me_centric_claims(
         entities=parsed.entities,
         links=filtered_links,
     )
+
+
+def _split_action_clauses(raw_text: str) -> list[str]:
+    clauses: list[str] = []
+    for sentence in SENTENCE_SPLIT_RE.split(raw_text):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        parts = [segment.strip() for segment in ACTION_CLAUSE_SPLIT_RE.split(sentence) if segment.strip()]
+        if not parts:
+            continue
+        clauses.extend(parts)
+    return clauses
+
+
+def _normalize_text_for_match(text: str) -> str:
+    collapsed = re.sub(r"\s+", "", text).strip().lower()
+    return re.sub(r"[。、！？・,.;:()（）「」『』\"'`]", "", collapsed)
+
+
+def _char_ngrams(text: str, n: int = 2) -> set[str]:
+    if not text:
+        return set()
+    if len(text) <= n:
+        return {text}
+    return {text[i : i + n] for i in range(len(text) - n + 1)}
+
+
+def _is_clause_covered(clause: str, claims: list[ParsedClaim]) -> bool:
+    normalized_clause = _normalize_text_for_match(clause)
+    if not normalized_clause:
+        return True
+    clause_ngrams = _char_ngrams(normalized_clause)
+    for claim in claims:
+        canonical = _normalize_text_for_match(claim.object_text_canonical or "")
+        if not canonical:
+            continue
+        if canonical in normalized_clause or normalized_clause in canonical:
+            return True
+        canonical_ngrams = _char_ngrams(canonical)
+        if not canonical_ngrams or not clause_ngrams:
+            continue
+        overlap = len(clause_ngrams & canonical_ngrams)
+        ratio = overlap / max(1, min(len(clause_ngrams), len(canonical_ngrams)))
+        if ratio >= 0.55:
+            return True
+    return False
+
+
+def _clause_to_fallback_claim(clause: str, occurred_at_utc: str | None) -> ParsedClaim:
+    is_plan = bool(PLAN_HINT_RE.search(clause))
+    predicate = "planned" if is_plan else "did"
+    modality = "plan" if is_plan else "fact"
+    confidence = 0.72 if is_plan else 0.68
+    excerpt = clause[:200]
+    return ParsedClaim(
+        subject_text="me",
+        predicate=predicate,
+        object_text_raw=clause[:1000],
+        object_text_canonical=clause[:1000],
+        me_role="actor",
+        modality=modality,
+        polarity="affirm",
+        certainty=confidence,
+        time_start_utc=occurred_at_utc,
+        time_end_utc=None,
+        subject_entity_name=None,
+        object_entity_name=None,
+        dimensions=[],
+        evidence_spans=[ParsedEvidenceSpan(char_start=None, char_end=None, excerpt=excerpt or "action clause")],
+    )
+
+
+def _augment_missing_action_claims(
+    claims: list[ParsedClaim],
+    *,
+    raw_text: str,
+    occurred_at_utc: str | None,
+) -> list[ParsedClaim]:
+    out = list(claims)
+    for clause in _split_action_clauses(raw_text):
+        if len(clause) < 4:
+            continue
+        if not ACTION_HINT_RE.search(clause) and not PLAN_HINT_RE.search(clause):
+            continue
+        if _is_clause_covered(clause, out):
+            continue
+        out.append(_clause_to_fallback_claim(clause, occurred_at_utc))
+    return out
 
 
 def _resolve_environment() -> str:
@@ -542,6 +652,36 @@ def log_openai_request(
                 (error_message[:1000] if error_message else None),
                 json.dumps(metadata_json, ensure_ascii=False),
             ),
+        )
+    except Exception:
+        return
+
+
+def log_analysis_artifact(
+    conn: Any,
+    *,
+    extraction_id: str | None,
+    artifact_type: str,
+    metadata_json: dict[str, Any],
+    dry_run: bool,
+) -> None:
+    if dry_run or not extraction_id:
+        return
+    if is_sqlite_conn(conn):
+        return
+    try:
+        payload = json.dumps(metadata_json, ensure_ascii=False, sort_keys=True)
+        sha256 = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        exec_write(
+            conn,
+            """
+            INSERT INTO public.fact_analysis_artifacts (
+              id, extraction_id, artifact_type, sha256, metadata_json, expires_at, created_at
+            ) VALUES (
+              %s, %s, %s, %s, %s::jsonb, now() + interval '30 days', now()
+            )
+            """,
+            (_new_id(), extraction_id, artifact_type, sha256, payload),
         )
     except Exception:
         return
@@ -664,6 +804,7 @@ def insert_claim_bundle(
     *,
     document: dict[str, Any],
     parsed: ParsedClaimsOutput,
+    extraction_id: str,
     extractor_version: str,
     replace_existing: bool,
     dry_run: bool,
@@ -714,12 +855,14 @@ def insert_claim_bundle(
         insert_sql = """
             INSERT INTO fact_claims (
               id, document_id, entry_id, subject_text, subject_entity_id,
-              predicate, object_text, object_entity_id, modality, polarity, certainty,
-              time_start_utc, time_end_utc, status, extractor_version, created_at, updated_at
+              predicate, object_text, object_text_raw, object_text_canonical, object_entity_id, me_role,
+              modality, polarity, certainty, quality_score, quality_flags,
+              time_start_utc, time_end_utc, status, extraction_id, extractor_version, revision_note, created_at, updated_at
             ) VALUES (
               %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s,
-              %s, %s, 'active', %s, now(), now()
+              %s, %s, %s, %s, %s,
+              %s, %s, 'active', %s, %s, %s, now(), now()
             )
         """
         if is_sqlite_conn(conn):
@@ -736,20 +879,53 @@ def insert_claim_bundle(
                 claim.subject_text,
                 subject_entity_id,
                 claim.predicate,
-                claim.object_text,
+                claim.object_text_canonical,
+                claim.object_text_raw,
+                claim.object_text_canonical,
                 object_entity_id,
+                claim.me_role,
                 claim.modality,
                 claim.polarity,
                 claim.certainty,
+                claim.certainty,
+                json.dumps([]),
                 claim.time_start_utc,
                 claim.time_end_utc,
+                extraction_id,
                 extractor_version,
+                None,
             ),
         )
         if rowcount == 1:
             claims_inserted += 1
         else:
             continue
+
+        for dim in claim.dimensions:
+            dim_sql = """
+                INSERT INTO fact_claim_dimensions (
+                  id, claim_id, dimension_type, dimension_value, normalized_value,
+                  confidence, source, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+            """
+            if is_sqlite_conn(conn):
+                dim_sql = dim_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+            else:
+                dim_sql += " ON CONFLICT DO NOTHING"
+            normalized_value = _normalize_alias(dim.dimension_value)
+            exec_write(
+                conn,
+                dim_sql,
+                (
+                    _new_id(),
+                    claim_id,
+                    dim.dimension_type,
+                    dim.dimension_value,
+                    normalized_value or dim.dimension_value.lower(),
+                    dim.confidence,
+                    dim.source,
+                ),
+            )
 
         for span in claim.evidence_spans:
             span_sql = """
@@ -836,18 +1012,19 @@ def extract_with_llm(
     base_url: str,
     api_key: str,
     timeout_s: int,
-) -> ParsedClaimsOutput:
+    extraction_id: str | None,
+    dry_run: bool,
+) -> tuple[ParsedClaimsOutput, dict[str, Any]]:
     payload = {
         "model": model,
-        "temperature": 0,
         "messages": [
             {
                 "role": "system",
                 "content": (
                     "You extract factual memory claims for personal memory retrieval. "
                     "Center extraction on the user as subject 'me'. "
-                    "Prefer claims that describe what me did, chose, felt, experienced, and with whom. "
-                    "Keep non-me events only when they affected me or explain my decisions. "
+                    "Extract claims exhaustively: do not omit any concrete action, event, plan, decision, task, meeting point, movement, workout, chore, or reminder present in the text. "
+                    "Split compound sentences into atomic claims in chronological order. "
                     "Object text must be self-contained and understandable alone, with minimal context completion if needed. "
                     "Use only allowed predicates from the schema enum. "
                     "When a decision/action is caused by an event, output two claims and add a link relation_type='caused_by' "
@@ -862,7 +1039,7 @@ def extract_with_llm(
                     f"declared_type={document['declared_type']}\n"
                     f"occurred_at_utc={document['occurred_at_utc']}\n"
                     "extraction_priority=me-centric factual memory\n"
-                    "rules=focus me actions/choices/relationships/feelings; keep causes affecting me; no speculative emotions\n"
+                    "rules=extract all concrete actions and plans without omission; split into atomic claims; keep causal relations; no speculative emotions\n"
                     f"text={llm_text[:DEFAULT_LLM_MAX_INPUT_CHARS]}"
                 ),
             },
@@ -876,6 +1053,20 @@ def extract_with_llm(
             },
         },
     }
+    log_analysis_artifact(
+        conn,
+        extraction_id=extraction_id,
+        artifact_type="prompt_meta",
+        metadata_json={
+            "document_id": str(document["id"]),
+            "entry_id": str(document["entry_id"]),
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "message_count": len(payload["messages"]),
+            "response_format": "json_schema",
+        },
+        dry_run=dry_run,
+    )
     if reasoning_effort != "none" and _supports_reasoning_effort(model):
         payload["reasoning_effort"] = reasoning_effort
     url = base_url.rstrip("/") + "/chat/completions"
@@ -938,6 +1129,16 @@ def extract_with_llm(
             error_message=f"{e.code} {detail}",
             metadata_json=metadata,
         )
+        log_analysis_artifact(
+            conn,
+            extraction_id=extraction_id,
+            artifact_type="validation_error",
+            metadata_json={
+                "error_type": "http_error",
+                "status_code": e.code,
+            },
+            dry_run=dry_run,
+        )
         raise RuntimeError(f"LLM HTTPError: {e.code} {detail}") from e
     except urlerror.URLError as e:
         status = "timeout" if "timed out" in str(e).lower() else "error"
@@ -962,6 +1163,16 @@ def extract_with_llm(
             error_type="network_error",
             error_message=str(e),
             metadata_json=metadata,
+        )
+        log_analysis_artifact(
+            conn,
+            extraction_id=extraction_id,
+            artifact_type="validation_error",
+            metadata_json={
+                "error_type": "network_error",
+                "detail": str(e),
+            },
+            dry_run=dry_run,
         )
         raise RuntimeError(f"LLM URLError: {e}") from e
 
@@ -1014,6 +1225,17 @@ def extract_with_llm(
             error_message=str(exc),
             metadata_json=metadata,
         )
+        log_analysis_artifact(
+            conn,
+            extraction_id=extraction_id,
+            artifact_type="validation_error",
+            metadata_json={
+                "error_type": "parse_error",
+                "detail": str(exc),
+                "openai_request_id": openai_request_id,
+            },
+            dry_run=dry_run,
+        )
         raise RuntimeError(f"LLM parse failed: {exc}") from exc
 
     log_openai_request(
@@ -1038,7 +1260,24 @@ def extract_with_llm(
         error_message=None,
         metadata_json=metadata,
     )
-    return parsed
+    log_analysis_artifact(
+        conn,
+        extraction_id=extraction_id,
+        artifact_type="response_meta",
+        metadata_json={
+            "openai_request_id": openai_request_id,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "request_cost_usd": request_cost_usd,
+        },
+        dry_run=dry_run,
+    )
+    return parsed, {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "request_cost_usd": request_cost_usd,
+        "openai_request_id": openai_request_id,
+    }
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1049,11 +1288,13 @@ def run(args: argparse.Namespace) -> int:
         neon_dsn_env=args.neon_dsn_env,
         neon_connect_timeout=args.neon_connect_timeout,
     )
+    extraction_id = args.extraction_id or _new_id()
     result = {
         "worker": WORKER_NAME,
         "contract_version": CONTRACT_VERSION,
         "job_id": args.job_id,
         "job_item_id": args.job_item_id,
+        "extraction_id": extraction_id,
         "entry_id": args.entry_id,
         "document_id": args.document_id,
         "status": "failed",
@@ -1061,6 +1302,10 @@ def run(args: argparse.Namespace) -> int:
         "evidence_inserted": 0,
         "entities_upserted": 0,
         "links_inserted": 0,
+        "request_tokens_in": 0,
+        "request_tokens_out": 0,
+        "request_cost_usd": 0.0,
+        "error_code": None,
         "attempt_count": max(args.attempt_count, 1),
         "next_retry_at": None,
         "error": None,
@@ -1085,6 +1330,7 @@ def run(args: argparse.Namespace) -> int:
         )
         if redaction.risk_level == "high":
             result["status"] = "blocked"
+            result["error_code"] = "blocked_sensitive"
             result["error"] = "blocked_sensitive"
             if not args.dry_run:
                 conn.commit()
@@ -1096,7 +1342,7 @@ def run(args: argparse.Namespace) -> int:
         if not api_key:
             raise RuntimeError(f"environment variable not set: {args.llm_api_key_env}")
 
-        parsed = extract_with_llm(
+        parsed, request_meta = extract_with_llm(
             conn=conn,
             document=document,
             llm_text=redaction.llm_text[: args.llm_max_input_chars],
@@ -1105,18 +1351,27 @@ def run(args: argparse.Namespace) -> int:
             base_url=args.llm_base_url,
             api_key=api_key,
             timeout_s=args.llm_timeout,
+            extraction_id=extraction_id,
+            dry_run=args.dry_run,
         )
+        result["request_tokens_in"] = _safe_to_int(request_meta.get("input_tokens"))
+        result["request_tokens_out"] = _safe_to_int(request_meta.get("output_tokens"))
+        result["request_cost_usd"] = _safe_to_float(request_meta.get("request_cost_usd"))
         parsed = normalize_to_me_centric_claims(
             parsed,
             raw_text=str(document.get("raw_text") or ""),
             declared_type=str(document.get("declared_type") or ""),
             occurred_at_utc=str(document.get("occurred_at_utc") or "") or None,
         )
+        parsed, quality_flags = apply_quality_gate(parsed)
+        if not parsed.claims:
+            raise RuntimeError("quality_gate_rejected_all_claims")
 
         claims_inserted, evidence_inserted, entities_upserted, links_inserted = insert_claim_bundle(
             conn,
             document=document,
             parsed=parsed,
+            extraction_id=extraction_id,
             extractor_version=f"llm-{args.llm_model}",
             replace_existing=args.replace_existing,
             dry_run=args.dry_run,
@@ -1125,6 +1380,8 @@ def run(args: argparse.Namespace) -> int:
         result["evidence_inserted"] = evidence_inserted
         result["entities_upserted"] = entities_upserted
         result["links_inserted"] = links_inserted
+        if quality_flags:
+            result["error"] = ",".join(quality_flags[:5])
         result["status"] = "succeeded"
 
         if not args.dry_run:
@@ -1132,6 +1389,7 @@ def run(args: argparse.Namespace) -> int:
     except Exception as exc:
         retry_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
         result["status"] = "queued"
+        result["error_code"] = "retryable_error"
         result["next_retry_at"] = retry_at
         result["error"] = str(exc)
         if not args.dry_run:
@@ -1169,6 +1427,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--document-id", help="Fact document ID")
     parser.add_argument("--job-id", help="Extraction job ID")
     parser.add_argument("--job-item-id", help="Extraction job item ID")
+    parser.add_argument("--extraction-id", default="", help="Extraction execution ID")
     parser.add_argument("--attempt-count", type=int, default=1, help="Attempt count")
     parser.add_argument("--replace-existing", action="store_true", help="Replace existing active claims for the entry")
     parser.add_argument("--dry-run", action="store_true", help="No DB writes")

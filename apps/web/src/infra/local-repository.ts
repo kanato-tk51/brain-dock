@@ -2,6 +2,8 @@ import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import {
   type AnalysisJob,
   type AnalysisJobQuery,
+  type AnalysisModel,
+  analysisModelSchema,
   createEntryInputSchema,
   type CreateEntryInput,
   draftSchema,
@@ -18,14 +20,15 @@ import {
   type OpenAiCostSummaryQuery,
   type OpenAiRequestQuery,
   type OpenAiRequestRecord,
+  type RebuildRollupsInput,
+  type Rollup,
+  type RollupQuery,
   type RunAnalysisInput,
   type RunAnalysisResult,
   searchQuerySchema,
   type SearchQuery,
   type SearchResult,
   securityRecordSchema,
-  syncQueueSchema,
-  type SyncQueueItem,
   validatePayload,
 } from "@/domain/schemas";
 import { getDb } from "@/infra/indexeddb";
@@ -143,13 +146,12 @@ export class LocalRepository implements EntryRepository {
       sensitivity: parsedInput.sensitivity,
       createdAtUtc: now,
       updatedAtUtc: now,
+      analysisState: "not_requested",
       payload,
-      syncStatus: "pending",
     });
 
-    await this.db.transaction("rw", this.db.entries, this.db.syncQueue, this.db.ftsIndex, async () => {
+    await this.db.transaction("rw", this.db.entries, this.db.ftsIndex, async () => {
       await this.db.entries.put(entry);
-      await this.enqueueSync(entry.id);
       await this.db.ftsIndex.put({
         id: entry.id,
         entryId: entry.id,
@@ -214,104 +216,6 @@ export class LocalRepository implements EntryRepository {
     return item ?? null;
   }
 
-  async enqueueSync(entryId: string): Promise<void> {
-    const now = nowUtcIso();
-    const existing = await this.db.syncQueue.where("entryId").equals(entryId).and((q) => q.status === "pending").first();
-    if (existing) {
-      return;
-    }
-
-    await this.db.syncQueue.put(
-      syncQueueSchema.parse({
-        id: newUuidV7(),
-        entryId,
-        status: "pending",
-        createdAtUtc: now,
-        updatedAtUtc: now,
-      }),
-    );
-  }
-
-  async listSyncQueue(): Promise<SyncQueueItem[]> {
-    const list = await this.db.syncQueue.orderBy("createdAtUtc").reverse().toArray();
-    return list;
-  }
-
-  async markSynced(queueId: string, remoteId: string): Promise<void> {
-    const queueItem = await this.db.syncQueue.get(queueId);
-    if (!queueItem) {
-      throw new Error(`sync queue not found: ${queueId}`);
-    }
-
-    const entry = await this.db.entries.get(queueItem.entryId);
-    if (!entry) {
-      throw new Error(`entry not found for sync queue: ${queueItem.entryId}`);
-    }
-
-    await this.db.transaction("rw", this.db.syncQueue, this.db.entries, this.db.history, async () => {
-      await this.db.syncQueue.put({
-        ...queueItem,
-        status: "synced",
-        updatedAtUtc: nowUtcIso(),
-        lastError: undefined,
-      });
-
-      const next = entrySchema.parse({
-        ...entry,
-        syncStatus: "synced",
-        remoteId,
-        updatedAtUtc: nowUtcIso(),
-      });
-      await this.db.entries.put(next);
-      await this.db.history.put(
-        historySchema.parse({
-          id: newUuidV7(),
-          entryId: entry.id,
-          source: "remote",
-          beforeJson: JSON.stringify(entry),
-          afterJson: JSON.stringify(next),
-          createdAtUtc: nowUtcIso(),
-        }),
-      );
-    });
-  }
-
-  async markSyncFailed(queueId: string, error: string): Promise<void> {
-    const queueItem = await this.db.syncQueue.get(queueId);
-    if (!queueItem) {
-      throw new Error(`sync queue not found: ${queueId}`);
-    }
-    const entry = await this.db.entries.get(queueItem.entryId);
-    if (!entry) {
-      throw new Error(`entry not found for sync queue: ${queueItem.entryId}`);
-    }
-
-    await this.db.transaction("rw", this.db.syncQueue, this.db.entries, this.db.history, async () => {
-      await this.db.syncQueue.put({
-        ...queueItem,
-        status: "failed",
-        lastError: error.slice(0, 400),
-        updatedAtUtc: nowUtcIso(),
-      });
-      const next = entrySchema.parse({
-        ...entry,
-        syncStatus: "failed",
-        updatedAtUtc: nowUtcIso(),
-      });
-      await this.db.entries.put(next);
-      await this.db.history.put(
-        historySchema.parse({
-          id: newUuidV7(),
-          entryId: entry.id,
-          source: "remote",
-          beforeJson: JSON.stringify(entry),
-          afterJson: JSON.stringify(next),
-          createdAtUtc: nowUtcIso(),
-        }),
-      );
-    });
-  }
-
   async listHistory(entryId?: string): Promise<HistoryRecord[]> {
     if (!entryId) {
       return this.db.history.orderBy("createdAtUtc").reverse().toArray();
@@ -342,6 +246,21 @@ export class LocalRepository implements EntryRepository {
     };
   }
 
+  async getAnalysisModels(): Promise<AnalysisModel[]> {
+    return [
+      analysisModelSchema.parse({ id: "gpt-5", label: "GPT-5", supportsReasoningEffort: true, defaultReasoningEffort: "low" }),
+      analysisModelSchema.parse({ id: "gpt-5.1", label: "GPT-5.1", supportsReasoningEffort: true, defaultReasoningEffort: "low" }),
+      analysisModelSchema.parse({ id: "gpt-5.2", label: "GPT-5.2", supportsReasoningEffort: true, defaultReasoningEffort: "low" }),
+      analysisModelSchema.parse({ id: "gpt-5-mini", label: "GPT-5 mini", supportsReasoningEffort: true, defaultReasoningEffort: "low" }),
+      analysisModelSchema.parse({ id: "gpt-5-nano", label: "GPT-5 nano", supportsReasoningEffort: true, defaultReasoningEffort: "low" }),
+      analysisModelSchema.parse({ id: "gpt-4.1", label: "GPT-4.1", supportsReasoningEffort: false, defaultReasoningEffort: "none" }),
+      analysisModelSchema.parse({ id: "gpt-4.1-mini", label: "GPT-4.1 mini", supportsReasoningEffort: false, defaultReasoningEffort: "none" }),
+      analysisModelSchema.parse({ id: "gpt-4.1-nano", label: "GPT-4.1 nano", supportsReasoningEffort: false, defaultReasoningEffort: "none" }),
+      analysisModelSchema.parse({ id: "gpt-4o", label: "GPT-4o", supportsReasoningEffort: false, defaultReasoningEffort: "none" }),
+      analysisModelSchema.parse({ id: "gpt-4o-mini", label: "GPT-4o mini", supportsReasoningEffort: false, defaultReasoningEffort: "none" }),
+    ];
+  }
+
   async runAnalysisForEntries(_input: RunAnalysisInput): Promise<RunAnalysisResult> {
     throw new Error("解析実行はremoteモードで利用してください");
   }
@@ -359,6 +278,26 @@ export class LocalRepository implements EntryRepository {
   }
 
   async listFactsByEntry(_entryId: string, _limit?: number): Promise<FactClaim[]> {
+    return [];
+  }
+
+  async getFactClaimById(_claimId: string): Promise<FactClaim | null> {
+    return null;
+  }
+
+  async reviseFactClaim(_claimId: string, _input: { objectTextCanonical: string; revisionNote?: string }): Promise<FactClaim> {
+    throw new Error("claim revision is available only with remote mode");
+  }
+
+  async retractFactClaim(_claimId: string, _input?: { reason?: string }): Promise<FactClaim> {
+    throw new Error("claim retract is available only with remote mode");
+  }
+
+  async listRollups(_query?: RollupQuery): Promise<Rollup[]> {
+    return [];
+  }
+
+  async rebuildRollups(_input: RebuildRollupsInput): Promise<Rollup[]> {
     return [];
   }
 
@@ -423,7 +362,7 @@ export class LocalRepository implements EntryRepository {
   }
 }
 
-function buildMinimalPayload(type: Entry["declaredType"], text: string): Record<string, unknown> {
+function buildMinimalPayload(type: EntryType, text: string): Record<string, unknown> {
   switch (type) {
     case "journal":
       return { reflection: text };
@@ -436,8 +375,8 @@ function buildMinimalPayload(type: Entry["declaredType"], text: string): Record<
     case "meeting":
       return { context: text, notes: text, decisions: [], actions: [] };
     default: {
-      const unreachableType: never = type;
-      throw new Error(`unsupported entry type: ${String(unreachableType)}`);
+      const neverType: never = type;
+      throw new Error(`unsupported type: ${String(neverType)}`);
     }
   }
 }

@@ -14,7 +14,7 @@ function makeEntry(updatedAtUtc: string, title: string): Entry {
     createdAtUtc: "2026-02-21T00:00:00.000Z",
     updatedAtUtc,
     payload: { note: "memo" },
-    syncStatus: "pending",
+    analysisState: "not_requested",
   };
 }
 

@@ -10,7 +10,8 @@ import { getRepository } from "@/infra/repository-singleton";
 import { formatLocal, toLocalInputValue, toUtcIso } from "@/shared/utils/time";
 
 const analysisStatusLabels = {
-  queued: "再試行待ち",
+  queued: "待機",
+  queued_retry: "再試行待ち",
   running: "実行中",
   succeeded: "成功",
   failed: "失敗",
@@ -57,7 +58,7 @@ function defaultDateRange() {
 }
 
 function claimSummary(claim: FactClaim): string {
-  return `${claim.subjectText} / ${claim.predicate} / ${claim.objectText}`;
+  return `${claim.subjectText} / ${claim.predicate} / ${claim.objectTextCanonical}`;
 }
 
 export function AnalysisHistoryClient() {
@@ -66,6 +67,7 @@ export function AnalysisHistoryClient() {
   const [historyFromLocal, setHistoryFromLocal] = useState(fromLocal);
   const [historyToLocal, setHistoryToLocal] = useState(toLocal);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
 
   const analysisJobsQuery = useQuery({
     queryKey: ["analysis-jobs"],
@@ -101,6 +103,21 @@ export function AnalysisHistoryClient() {
       enabled: Boolean(expandedJobId),
     })),
   });
+
+  async function retryEntry(entryId: string) {
+    try {
+      const result = await repo.runAnalysisForEntries({
+        entryIds: [entryId],
+        replaceExisting: true,
+        reasoningEffort: "none",
+        priority: "high",
+      });
+      setRetryNotice(`再実行完了: 成功 ${result.succeeded} / 失敗 ${result.failed}`);
+      await analysisJobsQuery.refetch();
+    } catch (error) {
+      setRetryNotice(error instanceof Error ? error.message : "再実行に失敗しました");
+    }
+  }
 
   const factsByEntry = useMemo(() => {
     const map = new Map<string, FactClaim[]>();
@@ -155,6 +172,7 @@ export function AnalysisHistoryClient() {
           </div>
 
           <div className="mt-3 space-y-2">
+            {retryNotice ? <p className="rounded bg-white/75 px-2 py-1 text-xs text-ink/80">{retryNotice}</p> : null}
             {analysisRows.map((job) => {
               const expanded = expandedJobId === job.id;
               return (
@@ -185,12 +203,19 @@ export function AnalysisHistoryClient() {
                               <Badge>{analysisStatusLabels[item.status]}</Badge>
                               <span className="text-ink/75">entry: {item.entryId}</span>
                               <span className="text-ink/75">claims: {item.claimsInserted}</span>
+                              {item.extractionId ? <span className="text-ink/65">extraction: {item.extractionId}</span> : null}
+                              {item.model ? <span className="text-ink/65">model: {item.model}</span> : null}
                             </div>
                             <p className="mt-2 text-[11px] text-ink/65">原文</p>
                             <p className="mt-1 rounded-lg bg-[#faf7f2] px-2 py-1 text-sm text-ink/90">{preview}</p>
 
                             {item.lastError ? (
                               <p className="mt-2 text-[11px] text-[#af5349]">error: {item.lastError}</p>
+                            ) : null}
+                            {(item.status === "failed" || item.status === "queued_retry" || item.status === "blocked") ? (
+                              <div className="mt-2">
+                                <Button variant="ghost" onClick={() => retryEntry(item.entryId)}>このentryを再実行</Button>
+                              </div>
                             ) : null}
 
                             <div className="mt-2 space-y-2">

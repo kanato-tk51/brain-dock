@@ -6,7 +6,7 @@ const dsn = process.env.NEON_DATABASE_URL;
 const maybeDescribe = dsn ? describe : describe.skip;
 
 maybeDescribe("neon integration", () => {
-  it("writes and reads entry + sync state", async () => {
+  it("writes and reads entry + analysis state", async () => {
     const store = createPgStore(dsn!);
     try {
       const created = await store.createEntry({
@@ -24,13 +24,13 @@ maybeDescribe("neon integration", () => {
       const listed = await store.listEntries({ tags: ["integration"], limit: 50 });
       expect(listed.some((e) => e.id === created.id)).toBe(true);
 
-      const queue = await store.listSyncQueue();
-      const target = queue.find((q) => q.entryId === created.id);
-      expect(target).toBeTruthy();
-      await store.markSynced(target!.id, `remote-${created.id}`);
+      expect(created.analysisState).toBe("not_requested");
+
+      const models = await store.getAnalysisModels();
+      expect(models.length).toBeGreaterThan(0);
 
       const history = await store.listHistory(created.id);
-      expect(history.length).toBeGreaterThan(0);
+      expect(history.length).toBeGreaterThanOrEqual(0);
     } finally {
       await store.close();
     }

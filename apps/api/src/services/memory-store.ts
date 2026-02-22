@@ -1,6 +1,7 @@
 import type {
   AnalysisJob,
   AnalysisJobQuery,
+  AnalysisModel,
   CreateEntryInput,
   Entry,
   FactClaim,
@@ -11,19 +12,33 @@ import type {
   OpenAiCostSummaryQuery,
   OpenAiRequestQuery,
   OpenAiRequestRecord,
+  RebuildRollupsInput,
+  Rollup,
+  RollupQuery,
   RunAnalysisInput,
   RunAnalysisResult,
   SearchQuery,
   SearchResult,
-  SyncQueueItem,
 } from "../lib/schemas.js";
 import { createEntryInputSchema, entrySchema, validatePayload } from "../lib/schemas.js";
 import { filterEntries, newId, nowUtcIso, searchEntries as rankSearch } from "../lib/utils.js";
 import type { DataStore } from "./store.js";
 
+const MEMORY_MODELS: AnalysisModel[] = [
+  { id: "gpt-5", label: "GPT-5", supportsReasoningEffort: true, defaultReasoningEffort: "low" },
+  { id: "gpt-5.1", label: "GPT-5.1", supportsReasoningEffort: true, defaultReasoningEffort: "low" },
+  { id: "gpt-5.2", label: "GPT-5.2", supportsReasoningEffort: true, defaultReasoningEffort: "low" },
+  { id: "gpt-5-mini", label: "GPT-5 mini", supportsReasoningEffort: true, defaultReasoningEffort: "low" },
+  { id: "gpt-5-nano", label: "GPT-5 nano", supportsReasoningEffort: true, defaultReasoningEffort: "low" },
+  { id: "gpt-4.1", label: "GPT-4.1", supportsReasoningEffort: false, defaultReasoningEffort: "none" },
+  { id: "gpt-4.1-mini", label: "GPT-4.1 mini", supportsReasoningEffort: false, defaultReasoningEffort: "none" },
+  { id: "gpt-4.1-nano", label: "GPT-4.1 nano", supportsReasoningEffort: false, defaultReasoningEffort: "none" },
+  { id: "gpt-4o", label: "GPT-4o", supportsReasoningEffort: false, defaultReasoningEffort: "none" },
+  { id: "gpt-4o-mini", label: "GPT-4o mini", supportsReasoningEffort: false, defaultReasoningEffort: "none" },
+];
+
 export class MemoryStore implements DataStore {
   private entries = new Map<string, Entry>();
-  private syncQueue = new Map<string, SyncQueueItem>();
   private history = new Map<string, HistoryRecord>();
 
   kind(): "memory" {
@@ -45,21 +60,10 @@ export class MemoryStore implements DataStore {
       sensitivity: parsed.sensitivity,
       createdAtUtc: now,
       updatedAtUtc: now,
-      syncStatus: "pending",
+      analysisState: "not_requested",
       payload,
     });
     this.entries.set(entry.id, entry);
-    const existing = [...this.syncQueue.values()].find((v) => v.entryId === entry.id && v.status === "pending");
-    if (!existing) {
-      const item: SyncQueueItem = {
-        id: newId(),
-        entryId: entry.id,
-        status: "pending",
-        createdAtUtc: now,
-        updatedAtUtc: now,
-      };
-      this.syncQueue.set(item.id, item);
-    }
     return entry;
   }
 
@@ -70,79 +74,6 @@ export class MemoryStore implements DataStore {
   async searchEntries(query: SearchQuery): Promise<SearchResult[]> {
     const filtered = filterEntries([...this.entries.values()], query);
     return rankSearch(filtered, query.text);
-  }
-
-  async listSyncQueue(): Promise<SyncQueueItem[]> {
-    return [...this.syncQueue.values()].sort((a, b) => b.createdAtUtc.localeCompare(a.createdAtUtc));
-  }
-
-  async markSynced(queueId: string, remoteId: string): Promise<void> {
-    const queueItem = this.syncQueue.get(queueId);
-    if (!queueItem) {
-      throw new Error(`sync queue not found: ${queueId}`);
-    }
-    const entry = this.entries.get(queueItem.entryId);
-    if (!entry) {
-      throw new Error(`entry not found: ${queueItem.entryId}`);
-    }
-
-    const now = nowUtcIso();
-    this.syncQueue.set(queueId, {
-      ...queueItem,
-      status: "synced",
-      updatedAtUtc: now,
-      lastError: undefined,
-    });
-
-    const next = entrySchema.parse({
-      ...entry,
-      syncStatus: "synced",
-      remoteId,
-      updatedAtUtc: now,
-    });
-    this.entries.set(entry.id, next);
-    const historyId = newId();
-    this.history.set(historyId, {
-      id: historyId,
-      entryId: entry.id,
-      source: "remote",
-      beforeJson: JSON.stringify(entry),
-      afterJson: JSON.stringify(next),
-      createdAtUtc: now,
-    });
-  }
-
-  async markSyncFailed(queueId: string, error: string): Promise<void> {
-    const queueItem = this.syncQueue.get(queueId);
-    if (!queueItem) {
-      throw new Error(`sync queue not found: ${queueId}`);
-    }
-    const entry = this.entries.get(queueItem.entryId);
-    if (!entry) {
-      throw new Error(`entry not found: ${queueItem.entryId}`);
-    }
-    const now = nowUtcIso();
-    this.syncQueue.set(queueId, {
-      ...queueItem,
-      status: "failed",
-      updatedAtUtc: now,
-      lastError: error,
-    });
-    const next = entrySchema.parse({
-      ...entry,
-      syncStatus: "failed",
-      updatedAtUtc: now,
-    });
-    this.entries.set(entry.id, next);
-    const historyId = newId();
-    this.history.set(historyId, {
-      id: historyId,
-      entryId: entry.id,
-      source: "remote",
-      beforeJson: JSON.stringify(entry),
-      afterJson: JSON.stringify(next),
-      createdAtUtc: now,
-    });
   }
 
   async listHistory(entryId?: string): Promise<HistoryRecord[]> {
@@ -176,6 +107,10 @@ export class MemoryStore implements DataStore {
     };
   }
 
+  async getAnalysisModels(): Promise<AnalysisModel[]> {
+    return MEMORY_MODELS;
+  }
+
   async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
     return {
       jobId: newId(),
@@ -206,6 +141,26 @@ export class MemoryStore implements DataStore {
   }
 
   async listFactsByEntry(_entryId: string, _limit?: number): Promise<FactClaim[]> {
+    return [];
+  }
+
+  async getFactClaimById(_claimId: string): Promise<FactClaim | null> {
+    return null;
+  }
+
+  async reviseFactClaim(_claimId: string, _input: { objectTextCanonical: string; revisionNote?: string }): Promise<FactClaim> {
+    throw new Error("claim revision is available only with postgres backend");
+  }
+
+  async retractFactClaim(_claimId: string, _input?: { reason?: string }): Promise<FactClaim> {
+    throw new Error("claim retract is available only with postgres backend");
+  }
+
+  async listRollups(_query?: RollupQuery): Promise<Rollup[]> {
+    return [];
+  }
+
+  async rebuildRollups(_input: RebuildRollupsInput): Promise<Rollup[]> {
     return [];
   }
 }

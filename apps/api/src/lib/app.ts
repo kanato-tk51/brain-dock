@@ -9,6 +9,10 @@ import {
   listQuerySchema,
   openAiCostSummaryQuerySchema,
   openAiRequestQuerySchema,
+  rebuildRollupsInputSchema,
+  retractFactClaimInputSchema,
+  reviseFactClaimInputSchema,
+  rollupQuerySchema,
   runAnalysisInputSchema,
   searchQuerySchema,
   type CreateEntryInput,
@@ -87,6 +91,9 @@ function parseFactSearchQuery(query: Record<string, unknown>) {
     type: typeof query.type === "string" ? query.type : undefined,
     modality: typeof query.modality === "string" ? query.modality : undefined,
     predicate: typeof query.predicate === "string" ? query.predicate : undefined,
+    meRole: typeof query.meRole === "string" ? query.meRole : undefined,
+    dimensionType: typeof query.dimensionType === "string" ? query.dimensionType : undefined,
+    dimensionValue: typeof query.dimensionValue === "string" ? query.dimensionValue : undefined,
     fromUtc: typeof query.fromUtc === "string" ? query.fromUtc : undefined,
     toUtc: typeof query.toUtc === "string" ? query.toUtc : undefined,
     limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
@@ -97,10 +104,24 @@ function parseFactSearchQuery(query: Record<string, unknown>) {
   return parsed.data;
 }
 
-export async function buildApp(store: DataStore): Promise<FastifyInstance> {
-  const app = Fastify({
-    logger: true,
+function parseRollupQuery(query: Record<string, unknown>) {
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : undefined;
+  const parsed = rollupQuerySchema.safeParse({
+    scopeType: typeof query.scopeType === "string" ? query.scopeType : undefined,
+    scopeKey: typeof query.scopeKey === "string" ? query.scopeKey : undefined,
+    periodType: typeof query.periodType === "string" ? query.periodType : undefined,
+    fromUtc: typeof query.fromUtc === "string" ? query.fromUtc : undefined,
+    toUtc: typeof query.toUtc === "string" ? query.toUtc : undefined,
+    limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
   });
+  if (!parsed.success) {
+    throw new Error("invalid rollup query");
+  }
+  return parsed.data;
+}
+
+export async function buildApp(store: DataStore): Promise<FastifyInstance> {
+  const app = Fastify({ logger: true });
 
   await app.register(cors, {
     origin: true,
@@ -153,30 +174,6 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
     return store.searchEntries(query.data);
   });
 
-  app.get("/sync-queue", async () => {
-    return store.listSyncQueue();
-  });
-
-  app.post("/sync-queue/:id/mark-synced", async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    const body = z.object({ remoteId: z.string().optional() }).safeParse(request.body ?? {});
-    if (!params.success || !body.success) {
-      return reply.status(400).send({ error: "invalid request" });
-    }
-    await store.markSynced(params.data.id, body.data.remoteId ?? params.data.id);
-    return reply.status(204).send();
-  });
-
-  app.post("/sync-queue/:id/mark-failed", async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    const body = z.object({ error: z.string().min(1) }).safeParse(request.body);
-    if (!params.success || !body.success) {
-      return reply.status(400).send({ error: "invalid request" });
-    }
-    await store.markSyncFailed(params.data.id, body.data.error);
-    return reply.status(204).send();
-  });
-
   app.get("/history", async (request, reply) => {
     const parsed = z
       .object({ entryId: z.string().uuid().optional() })
@@ -203,6 +200,19 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
     } catch {
       return reply.status(400).send({ error: "invalid query" });
     }
+  });
+
+  app.get("/analysis/models", async () => {
+    return store.getAnalysisModels();
+  });
+
+  app.post("/analysis/jobs", async (request, reply) => {
+    const parsed = runAnalysisInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "invalid body", detail: parsed.error.issues });
+    }
+    const result = await store.runAnalysisForEntries(parsed.data);
+    return reply.status(200).send(result);
   });
 
   app.post("/analysis/run", async (request, reply) => {
@@ -235,12 +245,61 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
     return job;
   });
 
+  app.get("/facts/claims", async (request, reply) => {
+    try {
+      const query = parseFactSearchQuery((request.query as Record<string, unknown>) ?? {});
+      return store.searchFacts(query);
+    } catch {
+      return reply.status(400).send({ error: "invalid query" });
+    }
+  });
+
   app.get("/facts/search", async (request, reply) => {
     try {
       const query = parseFactSearchQuery((request.query as Record<string, unknown>) ?? {});
       return store.searchFacts(query);
     } catch {
       return reply.status(400).send({ error: "invalid query" });
+    }
+  });
+
+  app.get("/facts/claims/:id", async (request, reply) => {
+    const params = z.object({ id: z.string() }).safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "invalid id" });
+    }
+    const claim = await store.getFactClaimById(params.data.id);
+    if (!claim) {
+      return reply.status(404).send({ error: "claim not found" });
+    }
+    return claim;
+  });
+
+  app.post("/facts/claims/:id/revise", async (request, reply) => {
+    const params = z.object({ id: z.string() }).safeParse(request.params);
+    const body = reviseFactClaimInputSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return reply.status(400).send({ error: "invalid request" });
+    }
+    try {
+      const claim = await store.reviseFactClaim(params.data.id, body.data);
+      return reply.status(200).send(claim);
+    } catch (error) {
+      return reply.status(404).send({ error: error instanceof Error ? error.message : "claim not found" });
+    }
+  });
+
+  app.post("/facts/claims/:id/retract", async (request, reply) => {
+    const params = z.object({ id: z.string() }).safeParse(request.params);
+    const body = retractFactClaimInputSchema.safeParse(request.body ?? {});
+    if (!params.success || !body.success) {
+      return reply.status(400).send({ error: "invalid request" });
+    }
+    try {
+      const claim = await store.retractFactClaim(params.data.id, body.data);
+      return reply.status(200).send(claim);
+    } catch (error) {
+      return reply.status(404).send({ error: error instanceof Error ? error.message : "claim not found" });
     }
   });
 
@@ -251,6 +310,24 @@ export async function buildApp(store: DataStore): Promise<FastifyInstance> {
       return reply.status(400).send({ error: "invalid request" });
     }
     return store.listFactsByEntry(params.data.entryId, query.data.limit);
+  });
+
+  app.get("/rollups", async (request, reply) => {
+    try {
+      const query = parseRollupQuery((request.query as Record<string, unknown>) ?? {});
+      return store.listRollups(query);
+    } catch {
+      return reply.status(400).send({ error: "invalid query" });
+    }
+  });
+
+  app.post("/rollups/rebuild", async (request, reply) => {
+    const body = rebuildRollupsInputSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "invalid body", detail: body.error.issues });
+    }
+    const rollups = await store.rebuildRollups(body.data);
+    return reply.status(200).send(rollups);
   });
 
   return app;

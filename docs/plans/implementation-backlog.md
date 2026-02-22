@@ -1,49 +1,47 @@
-# 実装バックログ（Fact-First移行後）
+# 実装バックログ（Fact-Centric v2）
 
 最終更新: 2026-02-22
 
-## 方針
-- 事実（claim）を正本にして、原文は根拠参照に限定する
-- 解析は LLM structured output を主系に固定する
-- 失敗時はフォールバックせず再試行キューで運用する
+## 現在の前提
+- DB正本は Neon（PostgreSQL）
+- 入力は即DB保存（同期キュー思想は廃止）
+- 解析は手動トリガー（ホーム/解析履歴から実行）
+- 抽出は LLM Structured Output 主系
 
-## P0（完了）
-- [x] lock/sync UI導線の削除（ホーム起点の操作へ一本化）
-- [x] `fact_*` テーブル追加 + `notes/tasks/key_facts` の legacy 化（Neon migration）
-- [x] `extract_claims_llm.py` による LLM構造化抽出を追加
-- [x] high-risk block / medium-risk mask の送信制御を追加
-- [x] `/analysis/run` を jobベース契約へ更新（extractor入力廃止）
-- [x] `/analysis/jobs`, `/facts/search`, `/facts/by-entry/:id` を追加
+## P0（今回完了）
+- [x] `fact_semantic_v2` マイグレーション追加（Neon + SQLite mirror）
+- [x] `fact_extractions` / `fact_claim_dimensions` / `fact_rollups` / `fact_analysis_artifacts` / `fact_claim_feedback` 追加
+- [x] `fact_claims` に `object_text_raw` / `object_text_canonical` / `me_role` / `quality_*` を追加
+- [x] APIを `analysis/jobs` / `facts/claims` / `rollups` 中心へ更新
+- [x] Webに `/facts` と `/facts/:claimId` を追加
+- [x] claim手動改訂（supersede）と retract UI/APIを追加
+- [x] 解析履歴ページで job/item/facts の追跡を可能化
+- [x] OpenAI利用ログ集計の互換維持
 
-## P1（次に着手）
-- [ ] `extract_claims_llm.py` のリトライワーカー（queued -> running）を cron/automation 化
-- [ ] claim抽出プロンプトを入力タイプ別（journal/todo/meeting等）に最適化
-- [ ] `fact_claims` 用の検索ランキング（modality/certainty/time）を実装
-- [ ] `analysisStatus` をホーム一覧カードに明示表示
-- [ ] Neon E2E（API + worker + web + migration）統合テストを追加
+## P1（次に実装）
+- [ ] `quality_flags` の判定ロジックを worker側で具体化（文脈欠落・主語曖昧など）
+- [ ] `queued_retry` を再実行する定期ジョブ（cron/automation）を追加
+- [ ] `analysis_state` と `latest_analysis_job_id` を全一覧UIに明示
+- [ ] claim検索のランキング改善（recency + certainty + me_role重み）
+- [ ] `/facts` の dimension フィルタに複合条件（AND）を追加
 
-## P2（検索/想起の実用化）
-- [x] `facts` 参照APIを追加（text/type/modality/predicateフィルタ）
-- [ ] ダッシュボードに「会話用Recallカード」を追加（実績/学び/根拠）
-- [ ] タグ・時系列・タイプ横断の検索速度計測を追加
-- [ ] claim + evidence を使った会話アシスト向け retrieval API を追加
+## P2（品質・運用）
+- [ ] claim手動改訂の差分表示を改善（before/after diff）
+- [ ] 解析失敗のエラー分類ダッシュボードを `/analysis-history` に追加
+- [ ] rollup生成を LLM要約へ拡張（現状は簡易要約）
+- [ ] `fact_analysis_artifacts.expires_at` のクリーンアップジョブを追加
+- [ ] 監査用エクスポート（claims + evidence + feedback JSONL）を追加
 
-## P3（安全運用）
-- [ ] pre-commit/CI に secret + PII スキャンを導入
-- [x] high-risk 入力の OpenAI送信ブロックを worker 側で強制
-- [ ] エクスポートJSONL（監査/移行用）を `scripts/export` に実装
-- [ ] バックアップ/リストア手順を runbook 化
-- [ ] `.env` 管理と環境別設定（local/staging/prod）を整理
+## P3（スケール）
+- [ ] `fact_claims.object_text_canonical` の全文索引を評価し必要なら PGroonga/外部検索を検討
+- [ ] `fact_claim_dimensions` の高頻度軸に部分索引追加
+- [ ] 10万entry性能検証（`/facts/claims` 95p < 400ms）を測定
+- [ ] バックフィル再実行スクリプトを追加（idempotent）
+- [ ] cold-storage向け圧縮戦略（raw保持期間 + rollup永続）を定義
 
-## P4（自動整理と会話アシストの土台）
-- [ ] 週次サマリ自動生成ジョブを追加
-- [ ] TODO抽出・決定抽出を claim/predicate ベースで定期ジョブ化
-- [ ] 会話アシスト用の Retrieval API（短文候補 + 根拠）を追加
-- [ ] 禁則情報フィルタ（マスク/警告）を提案生成パスへ組み込み
-- [ ] 音声入力を保存しないモード（要約のみ保存）を設計/実装
-
-## Done定義（各タスク共通）
-- [ ] 単体テスト + 統合テストが追加されている
-- [ ] Runbook/README が更新されている
-- [ ] 手元で `pnpm dev` と `pnpm vercel-build` が通る
-- [ ] Pythonワーカー側は `requirements.txt` で再現可能
+## 完了定義（共通）
+- [ ] API/Web/Python の対象テストが追加されている
+- [ ] `pnpm --filter brain-dock-api build` が通る
+- [ ] `pnpm --filter brain-dock-web build` が通る
+- [ ] 主要ユニット/統合テストが通る
+- [ ] docs/architecture に仕様差分が反映されている

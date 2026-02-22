@@ -1001,7 +1001,6 @@ def extract_with_llm(
 
     payload = {
         "model": model,
-        "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

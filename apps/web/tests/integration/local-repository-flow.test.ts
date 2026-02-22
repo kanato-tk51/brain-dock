@@ -24,6 +24,7 @@ describe("local repository integration", () => {
     const listed = await repo.listEntries();
     expect(listed).toHaveLength(1);
     expect(listed[0].id).toBe(created.id);
+    expect(listed[0].analysisState).toBe("not_requested");
 
     const searched = await repo.searchEntries({ text: "exponential", limit: 50 });
     expect(searched.length).toBeGreaterThan(0);
@@ -42,57 +43,9 @@ describe("local repository integration", () => {
     expect((loaded?.value as any).title).toBe("draft");
   });
 
-  it("enqueues sync and marks synced", async () => {
+  it("history is empty by default", async () => {
     const repo = new LocalRepository();
-    const entry = await repo.createEntry({
-      declaredType: "todo",
-      title: "Send report",
-      body: "",
-      tags: [],
-      occurredAtUtc: "2026-02-21T10:00:00.000Z",
-      sensitivity: "internal",
-      payload: {
-        details: "send report",
-        status: "todo",
-        priority: 2,
-      },
-    });
-
-    const queue = await repo.listSyncQueue();
-    expect(queue.some((q) => q.entryId === entry.id && q.status === "pending")).toBe(true);
-
-    const target = queue.find((q) => q.entryId === entry.id)!;
-    await repo.markSynced(target.id, "remote-1");
-
-    const updated = await repo.listEntries();
-    expect(updated[0].syncStatus).toBe("synced");
-  });
-
-  it("marks sync failure and keeps queue error", async () => {
-    const repo = new LocalRepository();
-    const entry = await repo.createEntry({
-      declaredType: "todo",
-      title: "Retry sync",
-      body: "",
-      tags: [],
-      occurredAtUtc: "2026-02-21T10:00:00.000Z",
-      sensitivity: "internal",
-      payload: {
-        details: "retry after network error",
-        status: "todo",
-        priority: 2,
-      },
-    });
-
-    const queue = await repo.listSyncQueue();
-    const target = queue.find((q) => q.entryId === entry.id)!;
-    await repo.markSyncFailed(target.id, "network timeout");
-
-    const queueAfter = await repo.listSyncQueue();
-    expect(queueAfter.find((q) => q.id === target.id)?.status).toBe("failed");
-    expect(queueAfter.find((q) => q.id === target.id)?.lastError).toContain("network");
-
-    const updated = await repo.listEntries();
-    expect(updated[0].syncStatus).toBe("failed");
+    const history = await repo.listHistory();
+    expect(history).toEqual([]);
   });
 });

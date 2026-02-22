@@ -2,6 +2,7 @@ import type { CaptureTextInput, EntryRepository } from "@/domain/repository";
 import type {
   AnalysisJob,
   AnalysisJobQuery,
+  AnalysisModel,
   Draft,
   Entry,
   EntryType,
@@ -13,29 +14,34 @@ import type {
   OpenAiCostSummaryQuery,
   OpenAiRequestQuery,
   OpenAiRequestRecord,
+  RebuildRollupsInput,
+  Rollup,
+  RollupQuery,
   RunAnalysisInput,
   RunAnalysisResult,
   SearchQuery,
   SearchResult,
-  SyncQueueItem,
 } from "@/domain/schemas";
 import {
+  analysisJobQuerySchema,
+  analysisJobSchema,
+  analysisModelSchema,
   entrySchema,
   historySchema,
   listQuerySchema,
-  analysisJobQuerySchema,
-  analysisJobSchema,
   factClaimSchema,
   factSearchQuerySchema,
   openAiCostSummaryQuerySchema,
   openAiCostSummarySchema,
   openAiRequestQuerySchema,
   openAiRequestRecordSchema,
+  rebuildRollupsInputSchema,
+  rollupQuerySchema,
+  rollupSchema,
   runAnalysisInputSchema,
   runAnalysisResultSchema,
   searchQuerySchema,
   searchResultSchema,
-  syncQueueSchema,
 } from "@/domain/schemas";
 import { LocalRepository } from "@/infra/local-repository";
 
@@ -147,19 +153,6 @@ export class RemoteRepository implements EntryRepository {
     return this.localSecurity.loadDraft(type);
   }
 
-  async listSyncQueue(): Promise<SyncQueueItem[]> {
-    const raw = await this.request<unknown[]>("/sync-queue", "GET");
-    return raw.map((row) => syncQueueSchema.parse(row));
-  }
-
-  async markSynced(queueId: string, remoteId: string): Promise<void> {
-    await this.request(`/sync-queue/${queueId}/mark-synced`, "POST", { remoteId });
-  }
-
-  async markSyncFailed(queueId: string, error: string): Promise<void> {
-    await this.request(`/sync-queue/${queueId}/mark-failed`, "POST", { error });
-  }
-
   async listHistory(entryId?: string): Promise<HistoryRecord[]> {
     const raw = await this.request<unknown[]>(
       `/history${encodeQuery({
@@ -201,9 +194,14 @@ export class RemoteRepository implements EntryRepository {
     return openAiCostSummarySchema.parse(raw);
   }
 
+  async getAnalysisModels(): Promise<AnalysisModel[]> {
+    const raw = await this.request<unknown[]>("/analysis/models", "GET");
+    return raw.map((row) => analysisModelSchema.parse(row));
+  }
+
   async runAnalysisForEntries(input: RunAnalysisInput): Promise<RunAnalysisResult> {
     const validated = runAnalysisInputSchema.parse(input);
-    const raw = await this.request<unknown>("/analysis/run", "POST", validated);
+    const raw = await this.request<unknown>("/analysis/jobs", "POST", validated);
     return runAnalysisResultSchema.parse(raw);
   }
 
@@ -234,11 +232,14 @@ export class RemoteRepository implements EntryRepository {
   async searchFacts(query?: FactSearchQuery): Promise<FactClaim[]> {
     const validated = query ? factSearchQuerySchema.parse(query) : undefined;
     const raw = await this.request<unknown[]>(
-      `/facts/search${encodeQuery({
+      `/facts/claims${encodeQuery({
         text: validated?.text,
         type: validated?.type,
         modality: validated?.modality,
         predicate: validated?.predicate,
+        meRole: validated?.meRole,
+        dimensionType: validated?.dimensionType,
+        dimensionValue: validated?.dimensionValue,
         fromUtc: validated?.fromUtc,
         toUtc: validated?.toUtc,
         limit: validated?.limit,
@@ -256,6 +257,50 @@ export class RemoteRepository implements EntryRepository {
       "GET",
     );
     return raw.map((row) => factClaimSchema.parse(row));
+  }
+
+  async getFactClaimById(claimId: string): Promise<FactClaim | null> {
+    try {
+      const raw = await this.request<unknown>(`/facts/claims/${claimId}`, "GET");
+      return factClaimSchema.parse(raw);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async reviseFactClaim(claimId: string, input: { objectTextCanonical: string; revisionNote?: string }): Promise<FactClaim> {
+    const raw = await this.request<unknown>(`/facts/claims/${claimId}/revise`, "POST", input);
+    return factClaimSchema.parse(raw);
+  }
+
+  async retractFactClaim(claimId: string, input?: { reason?: string }): Promise<FactClaim> {
+    const raw = await this.request<unknown>(`/facts/claims/${claimId}/retract`, "POST", input ?? {});
+    return factClaimSchema.parse(raw);
+  }
+
+  async listRollups(query?: RollupQuery): Promise<Rollup[]> {
+    const validated = query ? rollupQuerySchema.parse(query) : undefined;
+    const raw = await this.request<unknown[]>(
+      `/rollups${encodeQuery({
+        scopeType: validated?.scopeType,
+        scopeKey: validated?.scopeKey,
+        periodType: validated?.periodType,
+        fromUtc: validated?.fromUtc,
+        toUtc: validated?.toUtc,
+        limit: validated?.limit,
+      })}`,
+      "GET",
+    );
+    return raw.map((row) => rollupSchema.parse(row));
+  }
+
+  async rebuildRollups(input: RebuildRollupsInput): Promise<Rollup[]> {
+    const validated = rebuildRollupsInputSchema.parse(input);
+    const raw = await this.request<unknown[]>("/rollups/rebuild", "POST", validated);
+    return raw.map((row) => rollupSchema.parse(row));
   }
 
   async lockWithPin(pin: string): Promise<void> {
